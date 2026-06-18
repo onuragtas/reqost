@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump (auto = parse commits, none = skip tagging)'
+        required: false
+        default: 'auto'
+        type: choice
+        options: [auto, patch, minor, major, none]
 
 permissions:
   contents: read
@@ -16,9 +23,17 @@ env:
 
 jobs:
   # ── 1. Auto-tag ───────────────────────────────────────────────────────────
-  # Runs only on master push / manual dispatch (not PRs).
-  # Increments the patch version, creates + pushes the tag, and exposes it
-  # to downstream jobs via outputs.version.
+  # Runs on master push / manual dispatch (not PRs).
+  #
+  # Bump level resolution (highest precedence first):
+  #   1. workflow_dispatch input `bump`:
+  #        - patch | minor | major  → forced bump
+  #        - none                   → skip tagging entirely (outputs.version empty)
+  #        - auto                   → fall through to commit parsing (default)
+  #   2. Conventional Commits in the range last_tag..HEAD:
+  #        - any `BREAKING CHANGE` footer or `<type>!:` subject  → major
+  #        - any `feat:` subject                                 → minor
+  #        - else                                                → patch
   tag:
     name: Bump version
     if: github.event_name != 'pull_request'
@@ -27,6 +42,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.next.outputs.tag }}
+      level:   ${{ steps.next.outputs.level }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,22 +50,68 @@ jobs:
 
       - name: Compute next version
         id: next
+        env:
+          BUMP_INPUT: ${{ inputs.bump }}
         run: |
-          latest=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
+          set -euo pipefail
+
+          if [[ "${BUMP_INPUT:-}" == "none" ]]; then
+            echo "Bump skipped (workflow_dispatch input = none)"
+            echo "tag="    >> "$GITHUB_OUTPUT"
+            echo "level=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1 || true)
+
+          # Decide bump level.
+          if [[ -n "${BUMP_INPUT:-}" && "$BUMP_INPUT" != "auto" ]]; then
+            level="$BUMP_INPUT"
+            reason="manual dispatch"
+          else
+            if [ -z "$latest" ]; then
+              range="HEAD"
+            else
+              range="${latest}..HEAD"
+            fi
+            commits=$(git log --format='%B%n----' "$range" || true)
+            level="patch"
+            reason="default patch"
+            if echo "$commits" | grep -qE '(^|[[:space:]])BREAKING CHANGE'; then
+              level="major"; reason="BREAKING CHANGE footer"
+            elif echo "$commits" | grep -qE '^[a-zA-Z]+(\([^)]+\))?!:'; then
+              level="major"; reason="<type>!: subject"
+            elif echo "$commits" | grep -qE '^feat(\([^)]+\))?:'; then
+              level="minor"; reason="feat: subject"
+            fi
+          fi
+
+          # Compute next version.
           if [ -z "$latest" ]; then
-            next="v1.0.0"
+            case "$level" in
+              major) next="v1.0.0" ;;
+              minor) next="v0.1.0" ;;
+              *)     next="v0.0.1" ;;
+            esac
           else
             ver="${latest#v}"
             major="${ver%%.*}"
             rest="${ver#*.}"
             minor="${rest%%.*}"
             patch="${rest#*.}"
-            next="v${major}.${minor}.$((patch + 1))"
+            case "$level" in
+              major) next="v$((major+1)).0.0" ;;
+              minor) next="v${major}.$((minor+1)).0" ;;
+              patch) next="v${major}.${minor}.$((patch+1))" ;;
+            esac
           fi
-          echo "tag=$next" >> "$GITHUB_OUTPUT"
-          echo "Tagging as $next (previous: ${latest:-none})"
+
+          echo "tag=$next"     >> "$GITHUB_OUTPUT"
+          echo "level=$level"  >> "$GITHUB_OUTPUT"
+          echo "Tagging as $next (previous: ${latest:-none}, level: $level, reason: $reason)"
 
       - name: Create and push tag
+        if: steps.next.outputs.level != 'none'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -197,7 +259,9 @@ jobs:
   release:
     name: Release
     needs: [tag, build]
-    if: needs.tag.result == 'success'
+    # Skip when the tag job was skipped (PRs) OR when the user picked
+    # bump=none on a manual dispatch (level=none, no tag pushed).
+    if: needs.tag.result == 'success' && needs.tag.outputs.version != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
