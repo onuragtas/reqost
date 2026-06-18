@@ -77,21 +77,24 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 
 ### Devam edilecek
 
-**Orta efor (4–8 saat her biri)**
-- [ ] **SSE (Server-Sent Events) console** — `text/event-stream` Accept → `SseConsole.vue` (WsConsole pattern). Line-by-line scan → `sse:event` emit.
-- [ ] **GraphQL schema introspection + autocomplete** — `__schema` POST cache. CodeMirror graphql language (CodeMirror upgrade sonrası).
-- [ ] **gRPC streaming (server/client/bidi)** — `StreamCall` method, `grpc:event` emit, `GrpcConsole.vue` Send/Recv panel.
-- [ ] **Newman-style CLI runner** — `reqost run <collection.json>` alt-komutu, JUnit/JSON output, exit code.
-- [ ] **Mock server (Saved Examples)** — `reqost mock` veya in-app server. Saved Example'ları endpoint olarak serv et. **Save as Example sonrası.**
+**2026-06-19 ikinci turda biten 8**
+- [x] **SSE (Server-Sent Events) console** — `sse://`/`sses://` scheme → `SseConsole.vue` (WsConsole pattern). Backend `internal/sse` benzeri `SSEService` line-by-line parse → `sse:event` emit. Open/event/close/error/id/retry frames.
+- [x] **GraphQL schema introspection** — Body type GraphQL: "Load schema" düğmesi → `__schema` introspection POST, kind/name/fields listesi expand'lenebilir. (CodeMirror tabanlı autocomplete bir sonraki adım.)
+- [x] **gRPC streaming (server/client/bidi)** — `GRPCService.StreamCall/StreamSend/StreamCloseSend/StreamCancel`, `grpc:event` emit. Tüm üç streaming modu protoreflect dynamic ile çalışıyor.
+- [x] **Newman-style CLI runner** — `reqost run <coll.json>` alt-komutu (cli.go), `-e env.json` Postman env, `--format junit|json|text`, `--out path`, `-v` verbose. JUnit XML default. Exit code = fail var/yok. `reqost version`, `reqost help` de eklendi.
+- [x] **Mock server (`reqost mock`)** — `reqost mock <coll.json> --port 8090` MVP: koleksiyondaki her request URL path'ini endpoint olarak serve eder. (Saved Example payload entegrasyonu sonraki iterasyona kaldı — `detail.examples_json` parser tarafından henüz çıkarılmıyor.)
+- [x] **Folder-level inheritance (shared headers + auth)** — `tree.context_json` migrate; `GetFolderContext/SetFolderContext/AncestorContexts` Wails methodları. Sidebar folder right-click → "Folder context (shared headers / auth)…" → JSON editor. Send-time `resolveAncestorContext` ile root→parent zincirinden merge, child overrides parent. Scripts inheritance scope dışı bırakıldı (security/eval karmaşası).
+- [x] **OAuth 2.0 (Auth Code + PKCE, Client Credentials, Password)** — `internal/oauth2`: state + PKCE S256, transient localhost callback listener, `Browser.OpenURL`. `OAuthService` token cache + 30s-buffer otomatik refresh. AuthType `oauth2` + workbench Auth tab'ında grant/scope/tokenUrl/clientId/secret/audience formu + "Get token" düğmesi. Token cache anahtarı = grant|tokenUrl|clientId|scope|audience|username.
+- [x] **Multiple workspaces** — `internal/workspaces` Store (`workspaces.json` + `workspaces/<id>/index.db`). İlk açılışta default workspace + legacy `index.db` migrate. `CollectionService.{List,Create,Rename,Delete,Switch}Workspace`. Title bar'da workspace pill + dropdown (rename/delete/new), switch sonrası `collection:ready` event ile tree reload.
+- [x] **Git sync** — `git_service.go` child-process git wrapper: `Init/Status/Export/Commit/Branches/Checkout`. `go-git` yerine PATH'teki `git`'i kullanıyor (zero new dep). Export = workspace → Postman v2.1 JSON `<dir>/collection.json`. (UI'a entegrasyon — Settings veya workspace menüsünde "Bind to Git…" — bir sonraki UI iterasyona kaldı; backend hazır.)
 
-**Büyük (1+ gün her biri)**
-- [ ] **Folder-level auth / headers / scripts inheritance** — `tree.folder` ek alanlar, send-time ancestor merge, child override.
-- [ ] **OAuth 2.0 flows (Auth Code + PKCE, Client Credentials, Password)** — `internal/oauth2`, localhost listener redirect, `Browser.OpenURL`, token cache + auto-refresh. **En büyük tek gap.**
-- [ ] **CodeMirror 6 editor upgrade** — body / scripts / response için. Tek `EditorPane.vue` wrapper, modlar: JSON/JS/XML/GraphQL/HTTP.
-- [ ] **Variable highlighting + autocomplete** — `{{var}}` renkli, hover preview, eksik var kırmızı, `{{` tetikleyince dropdown. **CodeMirror sonrası.**
+**İleriki seansta (her biri 1+ gün)**
+- [ ] **CodeMirror 6 editor upgrade** — body/scripts/response için. `npm i @codemirror/{state,view,language,commands,search,autocomplete,lang-json,lang-javascript,lang-xml}` + `EditorPane.vue` wrapper. Bağlam-yoğun rewrite olduğu için bu turda yapılmadı.
+- [ ] **Variable highlighting + autocomplete** — CodeMirror sonrası mantıklı (decoration + autocomplete API).
+- [ ] **API design-first (OpenAPI editor + mock)** — Sol-rail `Design` modu. Mevcut mock server'ı OpenAPI spec'inden besleyecek bir editor + preview.
+- [ ] **Plugin / extension sistemi** — `goja` sandbox, `preSend`/`postReceive`/`transformBody` hook'ları, custom auth providerlar. Security model + permission UI gerek.
 
-**Çok büyük (haftalar)**
-- [ ] **Multiple workspaces** — Tek DB → birden çok, `cache/workspaces/<id>/index.db`, title bar switcher.
-- [ ] **Git sync** — Workspace ↔ git repo, commit/branch/diff, `go-git`.
-- [ ] **API design-first (OpenAPI editor + mock)** — Sol-rail `Design` modu, Insomnia eşdeğeri.
-- [ ] **Plugin / extension sistemi** — `goja` sandbox, `preSend`/`postReceive`/`transformBody` hook'ları, custom auth providerlar.
+**Git sync UI (kalan iş)**
+- [ ] Workspace dropdown'unda "Bind to Git directory…" — `Init+Export+Commit` tek tıkla
+- [ ] Status badge (uncommitted değişiklik var mı)
+- [ ] Branches modal — switch / new branch

@@ -5,7 +5,7 @@ import { Events } from '@wailsio/runtime'
 import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
   GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL, ImportAllFromPostman, ClearAll,
-  ImportHARBytes,
+  ImportHARBytes, GetFolderContext, SetFolderContext,
 } from '../../bindings/reqost/collectionservice'
 import { PickImportEnv } from '../../bindings/reqost/envservice'
 import { useTree, type FlatNode } from '../composables/useTree'
@@ -115,6 +115,7 @@ function openNodeMenu(e: MouseEvent, node: FlatNode) {
       { label: 'Run Folder', run: () => runColl(node.id) },
       { label: 'New Request', run: () => createUnder(node.id, 'request') },
       { label: 'New Folder', run: () => createUnder(node.id, 'folder') },
+      { label: 'Folder context (shared headers / auth)…', run: () => editFolderContext(node) },
     )
   } else {
     items.push({ label: 'Copy as cURL', run: () => copyCurl(node) })
@@ -134,6 +135,7 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'New Folder', run: () => createUnder('', 'folder') },
       { label: 'New WebSocket', run: () => openAdhoc({ name: 'WebSocket', method: 'GET', url: 'wss://' }) },
       { label: 'New gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
+      { label: 'New SSE Stream', run: () => openAdhoc({ name: 'SSE', method: 'GET', url: 'sses://api.example.com/stream' }) },
       { label: 'Paste cURL…', run: onPasteCurl },
       { label: 'Run Collection', run: () => runColl('') },
       { label: 'Import all from Postman…', run: onImportAllFromPostman },
@@ -256,6 +258,36 @@ function onSearchInput() {
 
 async function onImport() {
   await PickImport() // native open-file dialog; import events update the tree
+}
+
+async function editFolderContext(node: FlatNode) {
+  let current = '{}'
+  try { current = await GetFolderContext(node.id) } catch { current = '{}' }
+  // Pretty-print so the textarea is editable.
+  try { current = JSON.stringify(JSON.parse(current), null, 2) } catch { /* keep raw */ }
+  const next = await dialog.promptMultiline(
+    `Folder "${node.name}" — shared context`,
+    current,
+    `{
+  "sharedHeaders": [
+    { "key": "Authorization", "value": "Bearer {{token}}", "enabled": true }
+  ],
+  "auth": { "type": "bearer", "token": "{{token}}" }
+}`,
+  )
+  if (next === null) return
+  let toSave = next.trim() || '{}'
+  try { JSON.parse(toSave) } catch (e: any) {
+    flashError('Folder context (invalid JSON)', e)
+    return
+  }
+  try {
+    await SetFolderContext(node.id, toSave)
+    statusMsg.value = `Folder context saved`
+    setTimeout(() => { if (statusMsg.value === 'Folder context saved') statusMsg.value = '' }, 1500)
+  } catch (e) {
+    flashError('Save folder context', e)
+  }
 }
 
 async function onPasteCurl() {

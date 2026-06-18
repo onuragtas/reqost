@@ -19,6 +19,7 @@ import (
 	"reqost/internal/index"
 	"reqost/internal/openapi"
 	"reqost/internal/watcher"
+	"reqost/internal/workspaces"
 )
 
 // EventEmitter is satisfied by app.Event in Wails v3.
@@ -27,19 +28,25 @@ type EventEmitter interface {
 }
 
 type CollectionService struct {
+	mu      sync.Mutex
 	db      *index.DB
 	watch   *watcher.Watcher
 	emitter EventEmitter
 	dialog  *application.DialogManager
 	envSvc  *EnvService
+	ws      *workspaces.Store
 }
 
 func NewCollectionService() (*CollectionService, error) {
-	db, err := index.Open()
+	ws, err := workspaces.Open()
+	if err != nil {
+		return nil, fmt.Errorf("open workspaces: %w", err)
+	}
+	db, err := index.OpenAt(ws.DBPath(ws.ActiveID()))
 	if err != nil {
 		return nil, fmt.Errorf("open index: %w", err)
 	}
-	svc := &CollectionService{db: db}
+	svc := &CollectionService{db: db, ws: ws}
 
 	w, err := watcher.New(func(path string) {
 		svc.reimport(path)
@@ -50,6 +57,57 @@ func NewCollectionService() (*CollectionService, error) {
 	}
 	svc.watch = w
 	return svc, nil
+}
+
+// ── Workspaces ────────────────────────────────────────────────────────────
+
+// ListWorkspaces returns all known workspaces.
+func (s *CollectionService) ListWorkspaces() []workspaces.Workspace {
+	return s.ws.List()
+}
+
+// ActiveWorkspaceID returns the currently active workspace id.
+func (s *CollectionService) ActiveWorkspaceID() string { return s.ws.ActiveID() }
+
+// CreateWorkspace adds a new workspace and returns it. Doesn't switch to it —
+// the frontend usually wants to confirm + then SwitchWorkspace.
+func (s *CollectionService) CreateWorkspace(name string) (workspaces.Workspace, error) {
+	return s.ws.Create(name)
+}
+
+// RenameWorkspace updates the display name.
+func (s *CollectionService) RenameWorkspace(id, name string) error {
+	return s.ws.Rename(id, name)
+}
+
+// DeleteWorkspace removes a workspace AND its DB file. Refuses to delete the
+// last remaining one.
+func (s *CollectionService) DeleteWorkspace(id string) error {
+	return s.ws.Delete(id)
+}
+
+// SwitchWorkspace tears down the current index, opens the requested
+// workspace's DB, and emits collection:ready so the frontend reloads the
+// tree. Concurrent calls are serialized.
+func (s *CollectionService) SwitchWorkspace(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id == s.ws.ActiveID() {
+		return nil
+	}
+	if err := s.ws.SetActive(id); err != nil {
+		return err
+	}
+	if s.db != nil {
+		_ = s.db.Close()
+	}
+	newDB, err := index.OpenAt(s.ws.DBPath(id))
+	if err != nil {
+		return fmt.Errorf("open workspace db: %w", err)
+	}
+	s.db = newDB
+	s.emit("collection:ready", "workspace-switch")
+	return nil
 }
 
 func (s *CollectionService) setEmitter(e EventEmitter) {
@@ -202,6 +260,24 @@ func (s *CollectionService) RenameNode(id, name string) error {
 // DeleteNode removes a node and all of its descendants.
 func (s *CollectionService) DeleteNode(id string) error {
 	return s.db.DeleteNode(id)
+}
+
+// GetFolderContext loads the folder's inheritance JSON blob (shared headers /
+// auth / scripts). Returns "{}" if empty.
+func (s *CollectionService) GetFolderContext(id string) (string, error) {
+	return s.db.GetFolderContext(id)
+}
+
+// SetFolderContext persists the folder's inheritance JSON blob.
+func (s *CollectionService) SetFolderContext(id, contextJSON string) error {
+	return s.db.SetFolderContext(id, contextJSON)
+}
+
+// AncestorContexts returns the folder-context JSON for each ancestor of id,
+// root-to-immediate-parent order. The frontend merges these at send time
+// (child overrides parent).
+func (s *CollectionService) AncestorContexts(id string) ([]string, error) {
+	return s.db.AncestorContexts(id)
 }
 
 // MoveNode re-parents a node and sets its position among siblings (0-based).

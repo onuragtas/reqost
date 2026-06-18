@@ -204,6 +204,62 @@ func deleteByIDs(tx *sql.Tx, table string, ids []string) error {
 // into itself.
 var ErrInvalidMove = errors.New("invalid move: cannot move into self or descendant")
 
+// GetFolderContext returns the JSON blob the frontend uses to store
+// folder-level inheritance (shared headers / auth / scripts). Returns "{}" if
+// empty.
+func (db *DB) GetFolderContext(id string) (string, error) {
+	var ctx string
+	err := db.conn.QueryRow(`SELECT context_json FROM tree WHERE id = ?`, id).Scan(&ctx)
+	if err != nil {
+		return "{}", err
+	}
+	if ctx == "" {
+		ctx = "{}"
+	}
+	return ctx, nil
+}
+
+// SetFolderContext persists the folder-level inheritance blob.
+func (db *DB) SetFolderContext(id, contextJSON string) error {
+	if contextJSON == "" {
+		contextJSON = "{}"
+	}
+	_, err := db.conn.Exec(`UPDATE tree SET context_json = ? WHERE id = ?`, contextJSON, id)
+	return err
+}
+
+// AncestorContexts returns each ancestor's context JSON walked from the root
+// downwards (root first, immediate parent last) so the caller can merge with
+// child-overrides-parent semantics.
+func (db *DB) AncestorContexts(id string) ([]string, error) {
+	// Walk parent_id chain on db.conn (no nested writes — WAL safe).
+	chain := []string{}
+	cur := id
+	for {
+		var parent sql.NullString
+		var ctx string
+		err := db.conn.QueryRow(`SELECT parent_id, context_json FROM tree WHERE id = ?`, cur).Scan(&parent, &ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !parent.Valid || parent.String == "" {
+			break
+		}
+		// Look up parent's context.
+		var parentCtx string
+		var parentParent sql.NullString
+		if err := db.conn.QueryRow(`SELECT parent_id, context_json FROM tree WHERE id = ?`, parent.String).Scan(&parentParent, &parentCtx); err != nil {
+			break
+		}
+		if parentCtx == "" {
+			parentCtx = "{}"
+		}
+		chain = append([]string{parentCtx}, chain...)
+		cur = parent.String
+	}
+	return chain, nil
+}
+
 // MoveNode reparents id under newParentID (empty == root) at the given
 // 0-based index among that parent's children. Sibling sort_order values are
 // rewritten densely (0..N) in one transaction. Reads (subtree, siblings) run

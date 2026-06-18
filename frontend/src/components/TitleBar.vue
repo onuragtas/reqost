@@ -1,12 +1,53 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useUpdate } from '../composables/useUpdate'
+import {
+  ListWorkspaces, ActiveWorkspaceID, SwitchWorkspace, CreateWorkspace, RenameWorkspace, DeleteWorkspace,
+} from '../../bindings/reqost/collectionservice'
+import { useDialog } from '../composables/useDialog'
 
 const { version, updateInfo, applying, applied, checkError, autoCheck, install } = useUpdate()
+const dialog = useDialog()
 
 const showPopover = ref(false)
+const showWs = ref(false)
+const workspaces = ref<any[]>([])
+const activeWs = ref<string>('')
 
-onMounted(autoCheck)
+async function loadWorkspaces() {
+  try {
+    workspaces.value = await ListWorkspaces() ?? []
+    activeWs.value = await ActiveWorkspaceID() ?? ''
+  } catch { /* keep last */ }
+}
+async function pickWs(id: string) {
+  if (id === activeWs.value) { showWs.value = false; return }
+  try { await SwitchWorkspace(id) ; activeWs.value = id } catch { /* ignore */ }
+  showWs.value = false
+}
+async function newWs() {
+  const name = await dialog.prompt('New workspace name', 'New workspace')
+  if (!name?.trim()) return
+  try {
+    const w: any = await CreateWorkspace(name.trim())
+    if (w?.id) { await loadWorkspaces(); await pickWs(w.id) }
+  } catch { /* ignore */ }
+}
+async function renameWs(id: string, oldName: string) {
+  const name = await dialog.prompt('Rename workspace', oldName)
+  if (!name?.trim()) return
+  try { await RenameWorkspace(id, name.trim()); await loadWorkspaces() } catch { /* ignore */ }
+}
+async function delWs(id: string) {
+  const ok = await dialog.confirm('Delete this workspace AND its index file?')
+  if (!ok) return
+  try { await DeleteWorkspace(id); await loadWorkspaces() } catch { /* ignore */ }
+}
+function activeWsName(): string {
+  return workspaces.value.find(w => w.id === activeWs.value)?.name ?? 'Workspace'
+}
+
+onMounted(() => { autoCheck(); loadWorkspaces() })
 
 async function onInstall() {
   await install()
@@ -17,6 +58,25 @@ async function onInstall() {
 <template>
   <div class="titlebar">
     <span class="app-name">ReQost</span>
+
+    <div class="ws-wrap">
+      <button class="ws-pill" @click.stop="showWs = !showWs">
+        ⌘ {{ activeWsName() }} ▾
+      </button>
+      <div v-if="showWs" class="ws-menu" @click.stop>
+        <div class="ws-head">Workspaces</div>
+        <button
+          v-for="w in workspaces" :key="w.id"
+          class="ws-item" :class="{ active: w.id === activeWs }"
+          @click="pickWs(w.id)"
+        >
+          <span class="ws-name">{{ w.name }}</span>
+          <button class="ws-act" title="Rename" @click.stop="renameWs(w.id, w.name)">✎</button>
+          <button v-if="workspaces.length > 1" class="ws-act danger" title="Delete" @click.stop="delWs(w.id)">✕</button>
+        </button>
+        <button class="ws-new" @click="newWs">+ New workspace</button>
+      </div>
+    </div>
 
     <div class="right">
       <span class="ver-badge">{{ version }}</span>
@@ -43,7 +103,7 @@ async function onInstall() {
     </div>
 
     <!-- click-outside dismiss -->
-    <div v-if="showPopover" class="backdrop" @click="showPopover = false" />
+    <div v-if="showPopover || showWs" class="backdrop" @click="showPopover = false; showWs = false" />
   </div>
 </template>
 
@@ -157,4 +217,30 @@ async function onInstall() {
   inset: 0;
   z-index: 199;
 }
+
+.ws-wrap { position: relative; margin-left: 14px; -webkit-app-region: no-drag; }
+.ws-pill {
+  background: var(--bg-input); border: 1px solid var(--border-strong);
+  border-radius: 12px; color: var(--text-dim); font-size: 11px; padding: 3px 10px;
+}
+.ws-pill:hover { color: var(--text); }
+.ws-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; min-width: 220px;
+  background: var(--bg-panel); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  padding: 4px; z-index: 220; display: flex; flex-direction: column;
+}
+.ws-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); padding: 6px 10px; }
+.ws-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border-radius: 5px; color: var(--text-dim); font-size: 12px;
+}
+.ws-item:hover { background: var(--bg-hover); color: var(--text); }
+.ws-item.active { color: var(--accent); }
+.ws-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-act { padding: 0 4px; font-size: 11px; color: var(--text-faint); }
+.ws-act:hover { color: var(--text); }
+.ws-act.danger:hover { color: var(--danger); }
+.ws-new { padding: 7px 10px; color: var(--accent); font-size: 12px; border-radius: 5px; text-align: left; }
+.ws-new:hover { background: var(--bg-hover); }
 </style>

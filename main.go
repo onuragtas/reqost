@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -11,6 +12,22 @@ import (
 var assets embed.FS
 
 func main() {
+	// Subcommand routing — if the first arg is a known CLI verb, we don't
+	// boot the GUI. Useful for CI ("reqost run collection.json") and shells
+	// where bringing up a window would be wrong.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "run":
+			os.Exit(cliRun(os.Args[2:]))
+		case "mock":
+			os.Exit(cliMock(os.Args[2:]))
+		case "version", "--version", "-v":
+			os.Exit(cliVersion())
+		case "help", "--help", "-h":
+			cliHelp()
+			os.Exit(0)
+		}
+	}
 	svc, err := NewCollectionService()
 	if err != nil {
 		log.Fatalf("init collection service: %v", err)
@@ -22,6 +39,10 @@ func main() {
 	}
 
 	wsSvc := NewWSService()
+	sseSvc := NewSSEService()
+	grpcSvc := NewGRPCService()
+	oauthSvc := NewOAuthService()
+	gitSvc := NewGitService(svc)
 
 	app := application.New(application.Options{
 		Name:        "ReQost",
@@ -31,7 +52,10 @@ func main() {
 			application.NewService(NewExecService()),
 			application.NewService(envSvc),
 			application.NewService(wsSvc),
-			application.NewService(NewGRPCService()),
+			application.NewService(sseSvc),
+			application.NewService(grpcSvc),
+			application.NewService(oauthSvc),
+			application.NewService(gitSvc),
 			application.NewService(NewUpdateService()),
 		},
 		Assets: application.AssetOptions{
@@ -47,6 +71,9 @@ func main() {
 	svc.setEnvSvc(envSvc)
 	envSvc.setDialog(app.Dialog)
 	wsSvc.setEmitter(app.Event)
+	sseSvc.setEmitter(app.Event)
+	grpcSvc.setEmitter(app.Event)
+	oauthSvc.setApp(app)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "ReQost",

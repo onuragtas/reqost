@@ -24,12 +24,13 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 
 CREATE TABLE IF NOT EXISTS tree (
-	id         TEXT PRIMARY KEY,
-	name       TEXT NOT NULL,
-	parent_id  TEXT,
-	type       TEXT NOT NULL,
-	method     TEXT NOT NULL DEFAULT '',
-	sort_order INTEGER NOT NULL DEFAULT 0
+	id           TEXT PRIMARY KEY,
+	name         TEXT NOT NULL,
+	parent_id    TEXT,
+	type         TEXT NOT NULL,
+	method       TEXT NOT NULL DEFAULT '',
+	sort_order   INTEGER NOT NULL DEFAULT 0,
+	context_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_tree_parent ON tree(parent_id);
@@ -98,6 +99,7 @@ func migrate(conn *sql.DB) {
 		`ALTER TABLE detail ADD COLUMN auth_json TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE detail ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE detail ADD COLUMN examples_json TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE tree ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'`,
 	} {
 		_, _ = conn.Exec(stmt) // ignore "duplicate column name"
 	}

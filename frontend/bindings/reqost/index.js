@@ -6,6 +6,8 @@ import * as CollectionService from "./collectionservice.js";
 import * as EnvService from "./envservice.js";
 import * as ExecService from "./execservice.js";
 import * as GRPCService from "./grpcservice.js";
+import * as OAuthService from "./oauthservice.js";
+import * as SSEService from "./sseservice.js";
 import * as UpdateService from "./updateservice.js";
 import * as WSService from "./wsservice.js";
 export {
@@ -13,6 +15,8 @@ export {
     EnvService,
     ExecService,
     GRPCService,
+    OAuthService,
+    SSEService,
     UpdateService,
     WSService
 };

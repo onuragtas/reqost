@@ -9,6 +9,30 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as index$0 from "./internal/index/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as workspaces$0 from "./internal/workspaces/models.js";
+
+/**
+ * ActiveWorkspaceID returns the currently active workspace id.
+ * @returns {$CancellablePromise<string>}
+ */
+export function ActiveWorkspaceID() {
+    return $Call.ByID(572508857);
+}
+
+/**
+ * AncestorContexts returns the folder-context JSON for each ancestor of id,
+ * root-to-immediate-parent order. The frontend merges these at send time
+ * (child overrides parent).
+ * @param {string} id
+ * @returns {$CancellablePromise<string[]>}
+ */
+export function AncestorContexts(id) {
+    return $Call.ByID(3330305184, id).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
 
 /**
  * ClearAll removes every item from the collection index.
@@ -26,7 +50,7 @@ export function ClearAll() {
  */
 export function CreateFolder(parentID, name) {
     return $Call.ByID(1447735573, parentID, name).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -39,7 +63,19 @@ export function CreateFolder(parentID, name) {
  */
 export function CreateRequest(parentID, name, method) {
     return $Call.ByID(1976736442, parentID, name, method).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
+    }));
+}
+
+/**
+ * CreateWorkspace adds a new workspace and returns it. Doesn't switch to it —
+ * the frontend usually wants to confirm + then SwitchWorkspace.
+ * @param {string} name
+ * @returns {$CancellablePromise<workspaces$0.Workspace>}
+ */
+export function CreateWorkspace(name) {
+    return $Call.ByID(2924801694, name).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType2($result);
     }));
 }
 
@@ -53,6 +89,16 @@ export function DeleteNode(id) {
 }
 
 /**
+ * DeleteWorkspace removes a workspace AND its DB file. Refuses to delete the
+ * last remaining one.
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function DeleteWorkspace(id) {
+    return $Call.ByID(913569755, id);
+}
+
+/**
  * DuplicateNode creates a deep copy of a request or folder (including all
  * descendants) as the next sibling of the original.
  * @param {string} id
@@ -60,7 +106,7 @@ export function DeleteNode(id) {
  */
 export function DuplicateNode(id) {
     return $Call.ByID(3846844226, id).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType0($result);
+        return $$createType1($result);
     }));
 }
 
@@ -91,8 +137,18 @@ export function ExportCollectionToFile(path, name) {
  */
 export function GetChildren(parentID) {
     return $Call.ByID(1552572656, parentID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType3($result);
     }));
+}
+
+/**
+ * GetFolderContext loads the folder's inheritance JSON blob (shared headers /
+ * auth / scripts). Returns "{}" if empty.
+ * @param {string} id
+ * @returns {$CancellablePromise<string>}
+ */
+export function GetFolderContext(id) {
+    return $Call.ByID(2781383114, id);
 }
 
 /**
@@ -103,7 +159,7 @@ export function GetChildren(parentID) {
  */
 export function GetRequestDetail(id) {
     return $Call.ByID(193531561, id).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType5($result);
     }));
 }
 
@@ -113,7 +169,7 @@ export function GetRequestDetail(id) {
  */
 export function GetRootItems() {
     return $Call.ByID(47490365).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType3($result);
     }));
 }
 
@@ -175,7 +231,17 @@ export function ImportHARBytes(data) {
  */
 export function ListRequestsUnder(id) {
     return $Call.ByID(874310379, id).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType3($result);
+    }));
+}
+
+/**
+ * ListWorkspaces returns all known workspaces.
+ * @returns {$CancellablePromise<workspaces$0.Workspace[]>}
+ */
+export function ListWorkspaces() {
+    return $Call.ByID(2927415971).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType6($result);
     }));
 }
 
@@ -233,6 +299,16 @@ export function RenameNode(id, name) {
 }
 
 /**
+ * RenameWorkspace updates the display name.
+ * @param {string} id
+ * @param {string} name
+ * @returns {$CancellablePromise<void>}
+ */
+export function RenameWorkspace(id, name) {
+    return $Call.ByID(4077716920, id, name);
+}
+
+/**
  * SaveRequest persists edits to an existing request into the index.
  * @param {index$0.RequestDetail} d
  * @returns {$CancellablePromise<void>}
@@ -248,12 +324,36 @@ export function SaveRequest(d) {
  */
 export function Search(query) {
     return $Call.ByID(1217559273, query).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType3($result);
     }));
 }
 
+/**
+ * SetFolderContext persists the folder's inheritance JSON blob.
+ * @param {string} id
+ * @param {string} contextJSON
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetFolderContext(id, contextJSON) {
+    return $Call.ByID(4227757102, id, contextJSON);
+}
+
+/**
+ * SwitchWorkspace tears down the current index, opens the requested
+ * workspace's DB, and emits collection:ready so the frontend reloads the
+ * tree. Concurrent calls are serialized.
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function SwitchWorkspace(id) {
+    return $Call.ByID(1305933266, id);
+}
+
 // Private type creation functions
-const $$createType0 = index$0.TreeNode.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = index$0.RequestDetail.createFrom;
-const $$createType3 = $Create.Nullable($$createType2);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = index$0.TreeNode.createFrom;
+const $$createType2 = workspaces$0.Workspace.createFrom;
+const $$createType3 = $Create.Array($$createType1);
+const $$createType4 = index$0.RequestDetail.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = $Create.Array($$createType2);

@@ -43,7 +43,25 @@ export interface SavedExample {
 
 export interface TestRow { name: string; passed: boolean; error: string }
 
-export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey'
+export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2'
+
+export type OAuthGrant = 'client_credentials' | 'password' | 'authorization_code'
+
+export interface OAuth2Config {
+  grant: OAuthGrant
+  authUrl?: string
+  tokenUrl: string
+  clientId: string
+  clientSecret?: string
+  username?: string
+  password?: string
+  scope?: string
+  audience?: string
+  redirectUri?: string
+  usePkce?: boolean
+  clientAuthIn?: 'header' | 'body'
+}
+
 export interface Auth {
   type: AuthType
   token: string
@@ -51,6 +69,10 @@ export interface Auth {
   password: string
   key: string
   value: string
+  // OAuth 2.0 — only meaningful when type === 'oauth2'. The acquired access
+  // token is mirrored into `token` so the transport layer treats it like a
+  // Bearer for actual sending.
+  oauth2?: OAuth2Config
 }
 
 function blankAuth(): Auth {

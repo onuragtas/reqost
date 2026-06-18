@@ -7,6 +7,7 @@ import { useEnv } from '../composables/useEnv'
 import { useHistory } from '../composables/useHistory'
 import { useTree } from '../composables/useTree'
 import { useSettings } from '../composables/useSettings'
+import { resolveAncestorContext } from '../composables/useFolderContext'
 import { useDialog } from '../composables/useDialog'
 import { parseQuery, buildUrl, baseOf } from '../composables/url'
 import { parseCurl, toCurl } from '../composables/curl'
@@ -17,6 +18,7 @@ import {
 } from '../composables/useCodeGen'
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
+import SseConsole from './SseConsole.vue'
 import JsonTree from './JsonTree.vue'
 import { useVarHint } from '../composables/useVarHint'
 
@@ -30,10 +32,11 @@ const { refreshNode } = useTree()
 const { settings: appSettings } = useSettings()
 
 // Switch protocol UI by URL scheme: ws/wss → WebSocket, grpc → gRPC, else HTTP.
-const mode = computed<'http' | 'ws' | 'grpc'>(() => {
+const mode = computed<'http' | 'ws' | 'grpc' | 'sse'>(() => {
   const u = active.value?.url?.trim().toLowerCase() ?? ''
   if (u.startsWith('ws://') || u.startsWith('wss://')) return 'ws'
-  if (u.startsWith('grpc://')) return 'grpc'
+  if (u.startsWith('grpc://') || u.startsWith('grpcs://')) return 'grpc'
+  if (u.startsWith('sse://') || u.startsWith('sses://')) return 'sse'
   return 'http'
 })
 
@@ -114,6 +117,7 @@ const AUTH_TYPES: { id: AuthType; label: string }[] = [
   { id: 'bearer', label: 'Bearer Token' },
   { id: 'basic', label: 'Basic Auth' },
   { id: 'apikey', label: 'API Key' },
+  { id: 'oauth2', label: 'OAuth 2.0' },
 ]
 
 const REQ_TABS: { id: ReqSubTab; label: string; soon?: boolean }[] = [
@@ -256,6 +260,23 @@ async function send() {
     bodyType = 'json'
   }
 
+  // Merge folder-level inherited headers + auth. Child overrides: the
+  // request's own headers come AFTER inherited ones, so duplicates favour
+  // the request; auth falls back to inherited only when the request has none.
+  const ancestor = await resolveAncestorContext(t.id)
+  const inheritedHeaders = ancestor.headers.filter(h => h.enabled !== false && h.key.trim())
+  const ownHeaderKeys = new Set(t.headers.filter(h => h.key.trim()).map(h => h.key.toLowerCase()))
+  const mergedHeaders = [
+    ...inheritedHeaders.filter(h => !ownHeaderKeys.has(h.key.toLowerCase())),
+    ...t.headers.filter(h => h.key.trim()),
+  ]
+  // OAuth 2 was already resolved to a bearer access token in the Auth tab —
+  // the transport layer only understands bearer/basic/apikey, so map it.
+  const ownAuth = t.auth.type === 'oauth2' && t.auth.token
+    ? { ...t.auth, type: 'bearer' as const }
+    : (t.auth.type === 'none' ? null : { ...t.auth })
+  const mergedAuth = (!ownAuth && ancestor.auth) ? ancestor.auth : ownAuth
+
   // Resolve per-request settings → falling back to app-wide defaults.
   const s = t.settings
   const timeoutMs        = s.timeoutMs        ?? appSettings.defaultTimeoutMs
@@ -268,11 +289,11 @@ async function send() {
       protocol: 'http',
       method: t.method,
       url: t.url.trim(),
-      headers: t.headers.filter(h => h.key.trim()),
+      headers: mergedHeaders,
       body,
       bodyType,
       formFields: t.formFields.filter(f => f.key.trim()),
-      auth: t.auth.type === 'none' ? null : { ...t.auth },
+      auth: mergedAuth,
       variables: activeVars.value,
       timeoutMs,
       disableRedirect: !followRedirects,
@@ -351,6 +372,87 @@ function fmtSize(n: number) {
   return `${(n / 1048576).toFixed(2)} MB`
 }
 function fmtMs(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms` }
+
+// ── OAuth 2.0 ─────────────────────────────────────────────────────────────
+const oauthGetting = ref(false)
+const oauthError = ref<string>('')
+
+const oauth2Cfg = computed(() => {
+  const t = active.value
+  if (!t) return { grant: 'authorization_code' as const, tokenUrl: '', clientId: '' }
+  if (!t.auth.oauth2) {
+    t.auth.oauth2 = { grant: 'authorization_code', tokenUrl: '', clientId: '', scope: '', usePkce: true }
+  }
+  return t.auth.oauth2
+})
+
+async function getOAuthToken() {
+  const t = active.value
+  if (!t || !t.auth.oauth2) return
+  oauthGetting.value = true
+  oauthError.value = ''
+  try {
+    const { GetToken } = await import('../../bindings/reqost/oauthservice')
+    const tok: any = await GetToken(t.auth.oauth2 as any)
+    if (tok?.accessToken) {
+      t.auth.token = tok.accessToken
+    } else {
+      oauthError.value = 'No access_token in response'
+    }
+  } catch (e: any) {
+    oauthError.value = e?.message ?? String(e)
+  } finally {
+    oauthGetting.value = false
+  }
+}
+
+// ── GraphQL schema introspection ──────────────────────────────────────────
+const gqlSchema = ref<{ queryType?: string; types: any[] } | null>(null)
+const gqlLoadingSchema = ref(false)
+const gqlSchemaError = ref<string>('')
+
+async function loadGqlSchema() {
+  const t = active.value
+  if (!t || !t.url.trim()) return
+  gqlLoadingSchema.value = true
+  gqlSchemaError.value = ''
+  const introspection = `query IntrospectionQuery {
+    __schema {
+      queryType { name }
+      mutationType { name }
+      types {
+        kind
+        name
+        fields { name args { name } type { name kind } }
+      }
+    }
+  }`
+  try {
+    const res: any = await SendRequest(t.id, t.name + ' (schema)', {
+      protocol: 'http', method: 'POST', url: t.url.trim(),
+      headers: [{ key: 'Content-Type', value: 'application/json', enabled: true }],
+      body: JSON.stringify({ query: introspection }),
+      bodyType: 'json', formFields: [], auth: t.auth.type === 'none' ? null : { ...t.auth },
+      variables: activeVars.value,
+      timeoutMs: 30000, disableRedirect: false, maxRedirects: 10, insecureSkipVerify: false,
+      proxyURL: appSettings.proxyURL, clientCerts: [],
+    }, '', '')
+    const body = res?.response?.body
+    const data = JSON.parse(body || '{}')?.data?.__schema
+    if (!data) {
+      gqlSchemaError.value = 'No __schema in response'
+    } else {
+      gqlSchema.value = {
+        queryType: data.queryType?.name,
+        types: (data.types ?? []).filter((t: any) => !t.name?.startsWith('__')),
+      }
+    }
+  } catch (e: any) {
+    gqlSchemaError.value = e?.message ?? String(e)
+  } finally {
+    gqlLoadingSchema.value = false
+  }
+}
 
 // ── Saved Examples ────────────────────────────────────────────────────────
 async function saveAsExample() {
@@ -500,6 +602,7 @@ function onSetVerifySSL(s: string) {
 
     <WsConsole v-else-if="mode === 'ws'" :tab="active" />
     <GrpcConsole v-else-if="mode === 'grpc'" :tab="active" />
+    <SseConsole v-else-if="mode === 'sse'" :tab="active" />
 
     <template v-else>
       <!-- request name -->
@@ -577,7 +680,49 @@ function onSetVerifySSL(s: string) {
                 <input v-model="active.auth.key" class="auth-in" placeholder="Header name (e.g. X-API-Key)" @mouseenter="showVarHint($event, active.auth.key)" @mouseleave="hideVarHint" />
                 <input v-model="active.auth.value" class="auth-in" placeholder="Value" @mouseenter="showVarHint($event, active.auth.value)" @mouseleave="hideVarHint" />
               </template>
-              <p v-if="active.auth.type !== 'none'" class="hint">{{ VAR_HINT }}</p>
+              <template v-else-if="active.auth.type === 'oauth2'">
+                <div class="oauth-grid">
+                  <label>Grant</label>
+                  <select v-model="oauth2Cfg.grant" class="auth-in">
+                    <option value="authorization_code">Authorization Code + PKCE</option>
+                    <option value="client_credentials">Client Credentials</option>
+                    <option value="password">Password (legacy)</option>
+                  </select>
+
+                  <label v-if="oauth2Cfg.grant === 'authorization_code'">Authorize URL</label>
+                  <input v-if="oauth2Cfg.grant === 'authorization_code'" v-model="oauth2Cfg.authUrl" class="auth-in" placeholder="https://issuer/authorize" />
+
+                  <label>Token URL</label>
+                  <input v-model="oauth2Cfg.tokenUrl" class="auth-in" placeholder="https://issuer/oauth/token" />
+
+                  <label>Client ID</label>
+                  <input v-model="oauth2Cfg.clientId" class="auth-in" placeholder="client id" />
+
+                  <label>Client secret</label>
+                  <input v-model="oauth2Cfg.clientSecret" type="password" class="auth-in" placeholder="(optional for public clients)" />
+
+                  <template v-if="oauth2Cfg.grant === 'password'">
+                    <label>Username</label>
+                    <input v-model="oauth2Cfg.username" class="auth-in" />
+                    <label>Password</label>
+                    <input v-model="oauth2Cfg.password" type="password" class="auth-in" />
+                  </template>
+
+                  <label>Scope</label>
+                  <input v-model="oauth2Cfg.scope" class="auth-in" placeholder="openid profile email …" />
+
+                  <label>Audience</label>
+                  <input v-model="oauth2Cfg.audience" class="auth-in" placeholder="(Auth0-style; optional)" />
+                </div>
+                <div class="oauth-actions">
+                  <button class="oauth-get" :disabled="oauthGetting" @click="getOAuthToken">
+                    {{ oauthGetting ? 'Getting…' : 'Get token' }}
+                  </button>
+                  <span v-if="active.auth.token" class="oauth-have">✓ Token cached</span>
+                  <span v-if="oauthError" class="err">⚠ {{ oauthError }}</span>
+                </div>
+              </template>
+              <p v-if="active.auth.type !== 'none' && active.auth.type !== 'oauth2'" class="hint">{{ VAR_HINT }}</p>
             </div>
 
             <!-- Headers -->
@@ -628,10 +773,26 @@ function onSetVerifySSL(s: string) {
                 @mouseenter="showVarHint($event, active.body)" @mouseleave="hideVarHint"
               />
               <div v-else-if="active.bodyType === 'graphql'" class="gql">
-                <div class="gql-label">Query</div>
+                <div class="gql-toolbar">
+                  <span class="gql-label">Query</span>
+                  <button class="gql-schema" :disabled="gqlLoadingSchema" @click="loadGqlSchema">
+                    {{ gqlLoadingSchema ? 'Loading…' : (gqlSchema ? 'Reload schema' : 'Load schema') }}
+                  </button>
+                </div>
                 <textarea v-model="active.body" class="body-area script" spellcheck="false" placeholder="query { ... }" />
                 <div class="gql-label">Variables (JSON)</div>
                 <textarea v-model="active.graphqlVars" class="body-area script gql-vars" spellcheck="false" placeholder="{ }" />
+                <div v-if="gqlSchemaError" class="gql-err">⚠ {{ gqlSchemaError }}</div>
+                <div v-if="gqlSchema" class="gql-types selectable">
+                  <div class="gql-label">Types ({{ gqlSchema.types.length }})</div>
+                  <div v-for="t in gqlSchema.types" :key="t.name" class="gql-type">
+                    <span class="gql-kind">{{ t.kind.toLowerCase() }}</span>
+                    <span class="gql-name">{{ t.name }}</span>
+                    <span v-if="t.fields?.length" class="gql-fields">
+                      {{ t.fields.slice(0, 8).map((f: any) => f.name).join(', ') }}{{ t.fields.length > 8 ? `, …+${t.fields.length - 8}` : '' }}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div v-else class="kv">
                 <div v-for="(f, i) in active.formFields" :key="i" class="kv-row">
@@ -973,6 +1134,12 @@ function onSetVerifySSL(s: string) {
 .auth { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }
 .auth-type { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); }
 .auth-type select { flex: 1; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; padding: 6px 8px; }
+.oauth-grid { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; align-items: center; }
+.oauth-grid label { font-size: 11px; color: var(--text-faint); }
+.oauth-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.oauth-get { background: var(--accent); color: var(--accent-text); border-radius: 5px; font-weight: 600; padding: 6px 14px; }
+.oauth-get:disabled { opacity: 0.6; cursor: default; }
+.oauth-have { color: var(--ok); font-size: 11px; }
 .auth-in { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font: 12px monospace; padding: 7px 9px; }
 .hint { font-size: 11px; color: var(--text-faint); }
 
@@ -999,6 +1166,17 @@ function onSetVerifySSL(s: string) {
 .gql { display: flex; flex-direction: column; gap: 6px; height: 100%; }
 .gql-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint); }
 .gql-vars { min-height: 60px; max-height: 100px; }
+.gql-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gql-schema { font-size: 11px; padding: 3px 10px; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 4px; color: var(--text-dim); }
+.gql-schema:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.gql-schema:disabled { opacity: 0.6; cursor: default; }
+.gql-err { font-size: 11px; color: var(--danger); padding-top: 4px; }
+.gql-types { max-height: 200px; overflow: auto; padding: 6px 0; display: flex; flex-direction: column; gap: 3px; }
+.gql-type { display: flex; gap: 8px; align-items: baseline; font: 11px monospace; padding: 2px 6px; border-radius: 3px; }
+.gql-type:hover { background: var(--bg-hover); }
+.gql-kind { color: var(--text-faint); min-width: 60px; }
+.gql-name { color: var(--accent); }
+.gql-fields { color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .count.allpass { background: var(--ok); color: #06140d; }
 .cookies { flex: 1; overflow: auto; padding: 8px 16px; }
 .cookies-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-faint); padding-bottom: 6px; }
