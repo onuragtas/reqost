@@ -14,6 +14,7 @@ import { useCommands } from './composables/useCommands'
 import { useEnv } from './composables/useEnv'
 import { useTheme } from './composables/useTheme'
 import SettingsPanel from './components/SettingsPanel.vue'
+import DesignPanel from './components/DesignPanel.vue'
 
 const { loadEnvironments, openModal } = useEnv()
 const { register, open: openPalette } = useCommands()
@@ -59,6 +60,7 @@ onMounted(() => {
 
       <Sidebar v-show="mode === 'collections'" class="sidebar" />
       <HistoryPanel v-if="mode === 'history'" class="sidebar" />
+      <DesignPanel v-if="mode === 'design'" class="sidebar design-wide" />
       <SettingsPanel v-if="mode === 'settings'" class="sidebar" />
 
       <main class="main">
@@ -78,5 +80,6 @@ onMounted(() => {
 .app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .content { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 .sidebar { width: 280px; flex-shrink: 0; }
+.sidebar.design-wide { width: 640px; }
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 </style>

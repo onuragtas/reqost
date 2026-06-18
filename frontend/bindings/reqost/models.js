@@ -54,6 +54,98 @@ export class GRPCResult {
 }
 
 /**
+ * GitStatus is a coarse report on a working tree. Output is what `git status
+ * --porcelain` returns (empty = clean).
+ */
+export class GitStatus {
+    /**
+     * Creates a new GitStatus instance.
+     * @param {Partial<GitStatus>} [$$source = {}] - The source object to create the GitStatus.
+     */
+    constructor($$source = {}) {
+        if (!("branch" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["branch"] = "";
+        }
+        if (!("status" in $$source)) {
+            /**
+             * porcelain dump
+             * @member
+             * @type {string}
+             */
+            this["status"] = "";
+        }
+        if (!("hasRepo" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["hasRepo"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GitStatus instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {GitStatus}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new GitStatus(/** @type {Partial<GitStatus>} */($$parsedSource));
+    }
+}
+
+/**
+ * MockStatus reports the running mock server's port and last error, if any.
+ */
+export class MockStatus {
+    /**
+     * Creates a new MockStatus instance.
+     * @param {Partial<MockStatus>} [$$source = {}] - The source object to create the MockStatus.
+     */
+    constructor($$source = {}) {
+        if (!("running" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["running"] = false;
+        }
+        if (!("port" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["port"] = 0;
+        }
+        if (!("error" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MockStatus instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {MockStatus}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new MockStatus(/** @type {Partial<MockStatus>} */($$parsedSource));
+    }
+}
+
+/**
  * SendResult bundles the response with script side-effects so the UI can show
  * test results and persist any variable changes a script made.
  */

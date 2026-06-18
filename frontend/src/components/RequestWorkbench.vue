@@ -19,6 +19,7 @@ import {
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
 import SseConsole from './SseConsole.vue'
+import EditorPane from './EditorPane.vue'
 import JsonTree from './JsonTree.vue'
 import { useVarHint } from '../composables/useVarHint'
 
@@ -767,10 +768,13 @@ function onSetVerifySSL(s: string) {
                 </select>
               </div>
               <div v-if="active.bodyType === 'none'" class="soon"><span>This request has no body</span></div>
-              <textarea
+              <EditorPane
                 v-else-if="active.bodyType === 'raw' || active.bodyType === 'json'"
-                v-model="active.body" class="body-area" spellcheck="false" placeholder="Request body…"
-                @mouseenter="showVarHint($event, active.body)" @mouseleave="hideVarHint"
+                v-model="active.body"
+                :language="active.bodyType === 'json' ? 'json' : 'plain'"
+                :vars="activeVars"
+                placeholder="Request body…"
+                min-height="180px"
               />
               <div v-else-if="active.bodyType === 'graphql'" class="gql">
                 <div class="gql-toolbar">
@@ -779,9 +783,9 @@ function onSetVerifySSL(s: string) {
                     {{ gqlLoadingSchema ? 'Loading…' : (gqlSchema ? 'Reload schema' : 'Load schema') }}
                   </button>
                 </div>
-                <textarea v-model="active.body" class="body-area script" spellcheck="false" placeholder="query { ... }" />
+                <EditorPane v-model="active.body" language="javascript" :vars="activeVars" min-height="160px" />
                 <div class="gql-label">Variables (JSON)</div>
-                <textarea v-model="active.graphqlVars" class="body-area script gql-vars" spellcheck="false" placeholder="{ }" />
+                <EditorPane v-model="active.graphqlVars" language="json" :vars="activeVars" min-height="80px" />
                 <div v-if="gqlSchemaError" class="gql-err">⚠ {{ gqlSchemaError }}</div>
                 <div v-if="gqlSchema" class="gql-types selectable">
                   <div class="gql-label">Types ({{ gqlSchema.types.length }})</div>
@@ -810,16 +814,16 @@ function onSetVerifySSL(s: string) {
             </div>
 
             <!-- Pre-request script -->
-            <textarea
+            <EditorPane
               v-else-if="active.reqSubTab === 'prereq'"
-              v-model="active.preScript" class="body-area script" spellcheck="false"
-              placeholder="// Pre-request script (JavaScript)&#10;// pm.environment.set('ts', Date.now())"
+              v-model="active.preScript" language="javascript" min-height="200px"
+              placeholder="// Pre-request (JavaScript)"
             />
             <!-- Test script -->
-            <textarea
+            <EditorPane
               v-else-if="active.reqSubTab === 'tests'"
-              v-model="active.postScript" class="body-area script" spellcheck="false"
-              placeholder="// Tests (JavaScript)&#10;// pm.test('status 200', () => pm.response.to.have.status(200))"
+              v-model="active.postScript" language="javascript" min-height="200px"
+              placeholder="// Tests (JavaScript)"
             />
 
             <!-- Examples -->

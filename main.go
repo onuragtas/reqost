@@ -43,19 +43,25 @@ func main() {
 	grpcSvc := NewGRPCService()
 	oauthSvc := NewOAuthService()
 	gitSvc := NewGitService(svc)
+	designSvc := NewDesignService()
+	pluginSvc := NewPluginService()
+	execSvc := NewExecService()
+	execSvc.setPluginSvc(pluginSvc)
 
 	app := application.New(application.Options{
 		Name:        "ReQost",
 		Description: "High-performance desktop API client",
 		Services: []application.Service{
 			application.NewService(svc),
-			application.NewService(NewExecService()),
+			application.NewService(execSvc),
 			application.NewService(envSvc),
 			application.NewService(wsSvc),
 			application.NewService(sseSvc),
 			application.NewService(grpcSvc),
 			application.NewService(oauthSvc),
 			application.NewService(gitSvc),
+			application.NewService(designSvc),
+			application.NewService(pluginSvc),
 			application.NewService(NewUpdateService()),
 		},
 		Assets: application.AssetOptions{

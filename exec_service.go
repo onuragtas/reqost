@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"reqost/internal/httpclient"
+	"reqost/internal/plugins"
 	"reqost/internal/script"
 )
 
@@ -20,6 +21,11 @@ type ExecService struct {
 	// respCache backs Insomnia-style {{Name.response.body.path}} references.
 	// Keyed by the request's display name (passed from the frontend).
 	respCache *httpclient.Cache
+
+	// pluginSvc is optional — when set, enabled plugin hooks run around
+	// every request. Wired in main.go after construction so the dependency
+	// graph stays flat (ExecService doesn't import plugins directly).
+	pluginSvc *PluginService
 }
 
 func NewExecService() *ExecService {
@@ -29,6 +35,8 @@ func NewExecService() *ExecService {
 		respCache: httpclient.NewCache(),
 	}
 }
+
+func (s *ExecService) setPluginSvc(p *PluginService) { s.pluginSvc = p }
 
 // SendResult bundles the response with script side-effects so the UI can show
 // test results and persist any variable changes a script made.
@@ -91,11 +99,27 @@ func (s *ExecService) SendRequest(reqId, reqName string, req httpclient.Request,
 	}
 	req.Variables = vars
 
+	// Plugin pre-send hooks. Plugins see a plain map (JSON-like) and may
+	// mutate URL/headers/body. We materialize their changes back into req.
+	var loadedPlugins []plugins.Loaded
+	if s.pluginSvc != nil && s.pluginSvc.manager() != nil {
+		loadedPlugins, _ = s.pluginSvc.manager().LoadEnabled()
+		if len(loadedPlugins) > 0 {
+			mutated := plugins.RunPreSend(loadedPlugins, requestToMap(req))
+			applyMapToRequest(&req, mutated)
+		}
+	}
+
 	resp, err := s.client.Execute(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	out.Response = resp
+
+	// Plugin post-receive hooks (observers only — return value ignored).
+	if len(loadedPlugins) > 0 {
+		plugins.RunPostReceive(loadedPlugins, requestToMap(req), responseToMap(resp))
+	}
 
 	// Persist this response under its display name so future requests can
 	// chain off it. Empty name (e.g. adhoc tabs from History) skipped.
@@ -187,6 +211,67 @@ func headersToKV(hs []httpclient.Header) []script.KV {
 		out = append(out, script.KV{Key: h.Key, Value: h.Value})
 	}
 	return out
+}
+
+// requestToMap is the shape plugin authors see — a plain JS-friendly object.
+func requestToMap(req httpclient.Request) map[string]any {
+	hs := make([]map[string]any, 0, len(req.Headers))
+	for _, h := range req.Headers {
+		hs = append(hs, map[string]any{"key": h.Key, "value": h.Value, "enabled": h.Enabled})
+	}
+	return map[string]any{
+		"method":  req.Method,
+		"url":     req.URL,
+		"headers": hs,
+		"body":    req.Body,
+	}
+}
+
+func responseToMap(resp *httpclient.Response) map[string]any {
+	if resp == nil {
+		return map[string]any{}
+	}
+	hs := make([]map[string]any, 0, len(resp.Headers))
+	for _, h := range resp.Headers {
+		hs = append(hs, map[string]any{"key": h.Key, "value": h.Value})
+	}
+	return map[string]any{
+		"status":     resp.Status,
+		"statusText": resp.StatusText,
+		"headers":    hs,
+		"body":       resp.Body,
+	}
+}
+
+// applyMapToRequest pulls method/url/headers/body back out of a plugin's
+// mutated map (others are ignored — plugins can't inject new top-level fields).
+func applyMapToRequest(req *httpclient.Request, m map[string]any) {
+	if v, ok := m["method"].(string); ok && v != "" {
+		req.Method = v
+	}
+	if v, ok := m["url"].(string); ok && v != "" {
+		req.URL = v
+	}
+	if v, ok := m["body"].(string); ok {
+		req.Body = v
+	}
+	if raw, ok := m["headers"].([]any); ok {
+		hs := make([]httpclient.Header, 0, len(raw))
+		for _, e := range raw {
+			if h, ok := e.(map[string]any); ok {
+				k, _ := h["key"].(string)
+				val, _ := h["value"].(string)
+				enabled, _ := h["enabled"].(bool)
+				if k != "" {
+					if _, hasEnabled := h["enabled"]; !hasEnabled {
+						enabled = true
+					}
+					hs = append(hs, httpclient.Header{Key: k, Value: val, Enabled: enabled})
+				}
+			}
+		}
+		req.Headers = hs
+	}
 }
 
 // applyScriptRequest writes a pre-request script's mutations back onto req.

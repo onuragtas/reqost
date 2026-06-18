@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useTheme } from '../composables/useTheme'
 
-export type Mode = 'collections' | 'environments' | 'history' | 'settings'
+export type Mode = 'collections' | 'environments' | 'history' | 'design' | 'settings'
 
 const emit = defineEmits<{ mode: [m: Mode] }>()
 const { theme, toggle } = useTheme()
@@ -17,6 +17,7 @@ const MODES: { id: Mode; label: string }[] = [
   { id: 'collections', label: 'Collections' },
   { id: 'environments', label: 'Environments' },
   { id: 'history', label: 'History' },
+  { id: 'design', label: 'Design (OpenAPI)' },
   { id: 'settings', label: 'Settings' },
 ]
 </script>
@@ -38,6 +39,8 @@ const MODES: { id: Mode; label: string }[] = [
         <svg v-else-if="m.id === 'environments'" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 2.5 15.5 0 18M12 3c-2.5 2.5-2.5 15.5 0 18"/></svg>
         <!-- History: clock -->
         <svg v-else-if="m.id === 'history'" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        <!-- Design: document with curly brace -->
+        <svg v-else-if="m.id === 'design'" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h3M9 17h6"/></svg>
         <!-- Settings: gear -->
         <svg v-else viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
       </button>

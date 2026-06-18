@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Browser } from '@wailsio/runtime'
 import { useTheme } from '../composables/useTheme'
 import { useSettings } from '../composables/useSettings'
 import { useUpdate } from '../composables/useUpdate'
 import { RepoSlug } from '../../bindings/reqost/updateservice'
+import { List as ListPlugins, SetEnabled as SetPluginEnabled, Dir as PluginDir } from '../../bindings/reqost/pluginservice'
 
 const { theme, toggle } = useTheme()
 const { settings, reset } = useSettings()
@@ -13,6 +14,19 @@ const { version, updateInfo, applying, applied, checkError, install } = useUpdat
 const repoSlug = ref<string>('')
 const showNotes = ref(false)
 
+const plugins = ref<any[]>([])
+const pluginDir = ref<string>('')
+
+async function refreshPlugins() {
+  try { plugins.value = (await ListPlugins()) ?? [] } catch { plugins.value = [] }
+  try { pluginDir.value = await PluginDir() ?? '' } catch { /* ignore */ }
+}
+async function togglePlugin(path: string, enabled: boolean) {
+  await SetPluginEnabled(path, enabled)
+  await refreshPlugins()
+}
+
+onMounted(refreshPlugins)
 RepoSlug().then(s => { repoSlug.value = s }).catch(() => {})
 
 function openReleases() {
@@ -98,6 +112,23 @@ function openReleases() {
     </section>
 
     <section class="block">
+      <h4>Plugins</h4>
+      <p class="hint">
+        Drop <code>.js</code> files into <code class="dir">{{ pluginDir || '~/Library/Caches/reqost/plugins/' }}</code>.
+        Export <code>onPreSend(req)</code>, <code>onPostReceive(req, resp)</code>, or
+        <code>onTransformBody(req)</code>. They run in a goja sandbox with no I/O.
+      </p>
+      <div v-if="!plugins.length" class="hint" style="margin-top: 4px;">No plugins yet.</div>
+      <div v-else class="plugin-list">
+        <div v-for="p in plugins" :key="p.path" class="plugin-row">
+          <input type="checkbox" :checked="p.enabled" @change="togglePlugin(p.path, ($event.target as HTMLInputElement).checked)" />
+          <span class="plugin-name">{{ p.name }}</span>
+        </div>
+      </div>
+      <button class="ghost" @click="refreshPlugins">Refresh</button>
+    </section>
+
+    <section class="block">
       <h4>About</h4>
       <p class="hint">reqost — fast Postman-style API client for very large collections.</p>
       <button class="ghost" @click="reset">Reset to defaults</button>
@@ -171,6 +202,10 @@ function openReleases() {
 .cert-del { font-size: 11px; color: var(--danger); padding: 2px 4px; }
 .cert-del:hover { background: var(--bg-hover); }
 .hint code { background: var(--bg-input); padding: 0 4px; border-radius: 3px; font-size: 10.5px; }
+.dir { word-break: break-all; font: 10.5px monospace; }
+.plugin-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.plugin-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; background: var(--bg-input); border-radius: 4px; }
+.plugin-name { font: 12px monospace; color: var(--text); flex: 1; word-break: break-all; }
 .hint { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
 .pill {
   background: var(--bg-input);

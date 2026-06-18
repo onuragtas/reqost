@@ -88,13 +88,13 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [x] **Multiple workspaces** — `internal/workspaces` Store (`workspaces.json` + `workspaces/<id>/index.db`). İlk açılışta default workspace + legacy `index.db` migrate. `CollectionService.{List,Create,Rename,Delete,Switch}Workspace`. Title bar'da workspace pill + dropdown (rename/delete/new), switch sonrası `collection:ready` event ile tree reload.
 - [x] **Git sync** — `git_service.go` child-process git wrapper: `Init/Status/Export/Commit/Branches/Checkout`. `go-git` yerine PATH'teki `git`'i kullanıyor (zero new dep). Export = workspace → Postman v2.1 JSON `<dir>/collection.json`. (UI'a entegrasyon — Settings veya workspace menüsünde "Bind to Git…" — bir sonraki UI iterasyona kaldı; backend hazır.)
 
-**İleriki seansta (her biri 1+ gün)**
-- [ ] **CodeMirror 6 editor upgrade** — body/scripts/response için. `npm i @codemirror/{state,view,language,commands,search,autocomplete,lang-json,lang-javascript,lang-xml}` + `EditorPane.vue` wrapper. Bağlam-yoğun rewrite olduğu için bu turda yapılmadı.
-- [ ] **Variable highlighting + autocomplete** — CodeMirror sonrası mantıklı (decoration + autocomplete API).
-- [ ] **API design-first (OpenAPI editor + mock)** — Sol-rail `Design` modu. Mevcut mock server'ı OpenAPI spec'inden besleyecek bir editor + preview.
-- [ ] **Plugin / extension sistemi** — `goja` sandbox, `preSend`/`postReceive`/`transformBody` hook'ları, custom auth providerlar. Security model + permission UI gerek.
+**2026-06-19 üçüncü turda biten 4 — tüm parite kapandı**
+- [x] **CodeMirror 6 upgrade** — `EditorPane.vue` tek wrapper, body/scripts (pre+post)/graphql query+vars için. JSON/JavaScript/XML language. Line numbers, fold gutter, bracket match, syntax highlight, search, history, autocomplete, indent-with-tab. (`@codemirror/state`, `view`, `language`, `commands`, `search`, `autocomplete`, `lang-json`, `lang-javascript`, `lang-xml`)
+- [x] **Variable highlighting + autocomplete** — EditorPane'e `vars` prop. `{{name}}` her oluşumu accent rengiyle vurgulanır; tanımlı değilse kırmızı dalga underline. `{{` tetiklendiğinde aktif env keylerinden + dynamic helpers (`$timestamp/$guid/$randomInt/...`) dropdown. Hover'da resolved value preview.
+- [x] **API design-first (OpenAPI editor + mock)** — Sol-rail `Design` modu (yeni icon). `DesignPanel.vue` CodeMirror'da spec edit eder. `internal/openapi` reuse'lu YAML/JSON parse. Backend `DesignService.StartMock(port)` in-app HTTP server: spec'in `paths` map'inden response examples'i serve eder (2xx tercihli, `example`/`examples.*.value`).
+- [x] **Plugin / extension sistemi** — `internal/plugins`: cache dir'deki `.js` dosyaları, goja sandbox, hook'lar `onPreSend(req)` / `onPostReceive(req, resp)` / `onTransformBody(req)`. `PluginService.{Dir,List,SetEnabled}`. `ExecService` send öncesi pre-send, sonrası post-receive çağırır. 2s watchdog her hook için. Enable/disable persistence `plugins.json`. Settings paneline plugin list + checkbox.
 
-**Git sync UI (kalan iş)**
+**Git sync UI (opsiyonel ileri iş)**
 - [ ] Workspace dropdown'unda "Bind to Git directory…" — `Init+Export+Commit` tek tıkla
 - [ ] Status badge (uncommitted değişiklik var mı)
 - [ ] Branches modal — switch / new branch
