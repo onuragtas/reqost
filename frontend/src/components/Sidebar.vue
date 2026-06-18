@@ -4,7 +4,7 @@ import { RecycleScroller } from 'vue-virtual-scroller'
 import { Events } from '@wailsio/runtime'
 import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
-  GetRequestDetail, MoveNode, DuplicateNode,
+  GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL,
 } from '../../bindings/reqost/collectionservice'
 import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
@@ -135,6 +135,7 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'Run Collection', run: () => runColl('') },
       { label: 'Import Collection…', run: onImport },
       { label: 'Import OpenAPI…', run: onImportOpenAPI },
+      { label: 'Import from URL…', run: onImportFromURL },
       { label: 'Export Collection…', run: onExport },
     ],
   }
@@ -246,6 +247,20 @@ async function onImport() {
 async function onImportOpenAPI() {
   try {
     await PickImportOpenAPI() // merges the spec under a new folder; emits collection:ready
+  } catch (e) {
+    flashError('Import failed', e)
+  }
+}
+
+async function onImportFromURL() {
+  const url = await dialog.prompt(
+    'Import from URL',
+    '',
+    'https://  (Postman share link, OpenAPI spec, raw JSON…)'
+  )
+  if (!url?.trim()) return
+  try {
+    await ImportFromURL(url.trim())
   } catch (e) {
     flashError('Import failed', e)
   }
