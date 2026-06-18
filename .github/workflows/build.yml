@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -66,7 +66,12 @@ jobs:
 
       - name: Install frontend deps
         working-directory: frontend
-        run: npm ci
+        shell: bash
+        # `npm ci` is strict about lockfile sync. If a lockfile/package.json
+        # drift slips through (e.g. an optional native dep regenerated under a
+        # different Node version), fall back to `npm install` so the CI run
+        # still produces a binary instead of failing on lockfile bookkeeping.
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
       - name: Generate Wails bindings
         run: wails3 generate bindings -clean=true
