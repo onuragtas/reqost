@@ -57,7 +57,7 @@ export function useRunner() {
         url: d?.url || '', status: 0, ok: false, ms: 0, passed: 0, total: 0, error: '',
       }
       try {
-        const res: any = await SendRequest(node.id, {
+        const res: any = await SendRequest(node.id, node.name, {
           protocol: 'http',
           method: row.method,
           url: row.url,

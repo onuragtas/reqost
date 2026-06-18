@@ -31,6 +31,7 @@ type RequestDetail struct {
 	GrpcMethod  string `json:"grpcMethod"`
 	Auth        string `json:"auth"`     // JSON object
 	Settings    string `json:"settings"` // JSON object: per-request execution settings
+	Examples    string `json:"examples"` // JSON array of saved request+response snapshots
 }
 
 const nodeSelect = `
@@ -122,13 +123,13 @@ func (db *DB) GetRequestDetail(id string) (*RequestDetail, error) {
 	var d RequestDetail
 	err := db.conn.QueryRow(`
 		SELECT d.id, t.name, t.method, d.url, d.headers_json, d.body, d.pre_script, d.post_script, d.description,
-		       d.body_type, d.form_fields, d.graphql_vars, d.grpc_method, d.auth_json, d.settings_json
+		       d.body_type, d.form_fields, d.graphql_vars, d.grpc_method, d.auth_json, d.settings_json, d.examples_json
 		FROM detail d
 		JOIN tree t ON t.id = d.id
 		WHERE d.id = ?`, id).Scan(
 		&d.ID, &d.Name, &d.Method, &d.URL,
 		&d.Headers, &d.Body, &d.PreScript, &d.PostScript, &d.Description,
-		&d.BodyType, &d.FormFields, &d.GraphqlVars, &d.GrpcMethod, &d.Auth, &d.Settings,
+		&d.BodyType, &d.FormFields, &d.GraphqlVars, &d.GrpcMethod, &d.Auth, &d.Settings, &d.Examples,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

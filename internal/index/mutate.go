@@ -42,10 +42,10 @@ func (db *DB) SaveRequest(d RequestDetail) error {
 	}
 	if _, err := tx.Exec(`
 		UPDATE detail SET url = ?, headers_json = ?, body = ?, pre_script = ?, post_script = ?, description = ?,
-		                  body_type = ?, form_fields = ?, graphql_vars = ?, grpc_method = ?, auth_json = ?, settings_json = ?
+		                  body_type = ?, form_fields = ?, graphql_vars = ?, grpc_method = ?, auth_json = ?, settings_json = ?, examples_json = ?
 		WHERE id = ?`,
 		d.URL, nonEmptyJSON(d.Headers), d.Body, d.PreScript, d.PostScript, d.Description,
-		d.BodyType, nonEmptyJSON(d.FormFields), d.GraphqlVars, d.GrpcMethod, d.Auth, nonEmptyJSONObject(d.Settings), d.ID); err != nil {
+		d.BodyType, nonEmptyJSON(d.FormFields), d.GraphqlVars, d.GrpcMethod, d.Auth, nonEmptyJSONObject(d.Settings), nonEmptyJSON(d.Examples), d.ID); err != nil {
 		return fmt.Errorf("update detail: %w", err)
 	}
 	if err := reindexFTS(tx, d.ID, d.Name, d.URL, d.Body); err != nil {

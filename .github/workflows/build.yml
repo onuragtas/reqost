@@ -162,12 +162,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Linux build deps
+      # GTK/WebKit dev packages are >150MB and dominate Linux build time.
+      # awalsh128/cache-apt-pkgs-action caches the resolved .deb archives in
+      # GitHub's actions cache keyed by the package list — on cache hit the
+      # apt-get update + download phase is skipped (only the local install
+      # remains, which is fast).
+      - name: Install Linux build deps (cached)
         if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
+          version: 1.0  # bump if the package list changes meaningfully
 
       - name: Install wails3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}

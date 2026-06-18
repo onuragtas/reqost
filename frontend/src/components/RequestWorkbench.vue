@@ -123,6 +123,7 @@ const REQ_TABS: { id: ReqSubTab; label: string; soon?: boolean }[] = [
   { id: 'body', label: 'Body' },
   { id: 'prereq', label: 'Pre-req' },
   { id: 'tests', label: 'Tests' },
+  { id: 'examples', label: 'Examples' },
   { id: 'settings', label: 'Settings' },
 ]
 const RES_TABS: { id: ResSubTab; label: string; soon?: boolean }[] = [
@@ -263,7 +264,7 @@ async function send() {
   const verifySSL        = s.verifySSL        ?? appSettings.defaultVerifySSL
 
   try {
-    const res: any = await SendRequest(t.id, {
+    const res: any = await SendRequest(t.id, t.name, {
       protocol: 'http',
       method: t.method,
       url: t.url.trim(),
@@ -350,6 +351,72 @@ function fmtSize(n: number) {
   return `${(n / 1048576).toFixed(2)} MB`
 }
 function fmtMs(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms` }
+
+// ── Saved Examples ────────────────────────────────────────────────────────
+async function saveAsExample() {
+  const t = active.value
+  if (!t || !t.response) return
+  const defaultName = `${t.response.status} ${t.response.statusText || 'response'} — ${new Date().toLocaleString()}`
+  const name = await dialog.prompt('Save as example — name?', defaultName)
+  if (!name?.trim()) return
+  const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `ex-${Date.now()}`
+  t.examples.push({
+    id,
+    name: name.trim(),
+    savedAt: Date.now(),
+    request: {
+      method: t.method,
+      url: t.url,
+      headers: t.headers.map(h => ({ ...h })),
+      body: t.body,
+      bodyType: t.bodyType,
+    },
+    response: {
+      status: t.response.status,
+      statusText: t.response.statusText,
+      headers: (t.response.headers ?? []).map((h: any) => ({ key: h.key, value: h.value, enabled: true })),
+      body: t.response.body ?? '',
+      sizeBytes: t.response.sizeBytes ?? 0,
+    },
+  })
+  try {
+    await SaveRequest(toDetail(t) as any)
+    markClean(t)
+  } catch (e) { /* keep in memory; user can hit Save again */ }
+}
+
+function deleteExample(id: string) {
+  const t = active.value
+  if (!t) return
+  t.examples = t.examples.filter(e => e.id !== id)
+  // Persist on next Save — keeps the action async-light.
+}
+
+function loadExample(id: string) {
+  const t = active.value
+  if (!t) return
+  const ex = t.examples.find(e => e.id === id)
+  if (!ex) return
+  t.method     = ex.request.method
+  t.url        = ex.request.url
+  t.params     = parseQuery(t.url)
+  t.headers    = ex.request.headers.map(h => ({ ...h }))
+  t.body       = ex.request.body
+  t.bodyType   = ex.request.bodyType
+  t.response   = {
+    status: ex.response.status,
+    statusText: ex.response.statusText,
+    headers: ex.response.headers,
+    body: ex.response.body,
+    sizeBytes: ex.response.sizeBytes,
+    timing: { dnsMs: 0, connectMs: 0, tlsMs: 0, ttfbMs: 0, totalMs: 0 },
+  }
+  t.resSubTab  = 'body'
+}
+
+function fmtExampleTime(ms: number): string {
+  return new Date(ms).toLocaleString()
+}
 
 // ── Timing waterfall (DNS / Connect / TLS / TTFB / Download) ──────────────
 interface Timing {
@@ -594,6 +661,28 @@ function onSetVerifySSL(s: string) {
               placeholder="// Tests (JavaScript)&#10;// pm.test('status 200', () => pm.response.to.have.status(200))"
             />
 
+            <!-- Examples -->
+            <div v-else-if="active.reqSubTab === 'examples'" class="examples-pane">
+              <div v-if="!active.examples.length" class="soon">
+                <span>No saved examples. After a Send, click <strong>Save as example</strong> on the response.</span>
+              </div>
+              <div v-else class="ex-list">
+                <div v-for="e in [...active.examples].reverse()" :key="e.id" class="ex-row">
+                  <button class="ex-load" :title="`Load — ${e.name}`" @click="loadExample(e.id)">
+                    <span class="ex-method" :style="{ color: METHOD_COLORS[e.request.method] ?? 'var(--text-dim)' }">{{ e.request.method }}</span>
+                    <span class="ex-name">{{ e.name }}</span>
+                    <span class="ex-status" :class="{
+                      ok: e.response.status >= 200 && e.response.status < 300,
+                      warn: e.response.status >= 300 && e.response.status < 400,
+                      err: e.response.status >= 400,
+                    }">{{ e.response.status }}</span>
+                  </button>
+                  <span class="ex-time">{{ fmtExampleTime(e.savedAt) }}</span>
+                  <button class="ex-del" title="Delete" @click="deleteExample(e.id)">✕</button>
+                </div>
+              </div>
+            </div>
+
             <!-- Settings: per-request execution options + description -->
             <div v-else-if="active.reqSubTab === 'settings'" class="settings">
               <div class="set-grid">
@@ -665,6 +754,9 @@ function onSetVerifySSL(s: string) {
                 </svg>
               </span>
               <span class="meta">{{ fmtSize(active.response.sizeBytes) }}</span>
+              <button class="save-ex" title="Save this response as an example" @click="saveAsExample">
+                ★ Save as example
+              </button>
               <div class="res-subtabs">
                 <button
                   v-for="st in RES_TABS" :key="st.id"
@@ -828,6 +920,33 @@ function onSetVerifySSL(s: string) {
 .res { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--border); }
 
 .subtabs, .res-subtabs { display: flex; gap: 2px; }
+.save-ex {
+  background: var(--bg-input); border: 1px solid var(--border-strong);
+  border-radius: 4px; color: var(--text-dim); font-size: 11px;
+  padding: 3px 8px; margin-left: 4px;
+}
+.save-ex:hover { color: var(--accent); border-color: var(--accent); }
+.examples-pane { flex: 1; display: flex; flex-direction: column; min-height: 100px; }
+.ex-list { display: flex; flex-direction: column; gap: 4px; }
+.ex-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--bg-input);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.ex-row:hover { border-color: var(--border-strong); }
+.ex-load {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  background: transparent; text-align: left;
+}
+.ex-method { font: 700 10px monospace; min-width: 50px; }
+.ex-name { flex: 1; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-status { font: 700 11px monospace; padding: 1px 6px; border-radius: 3px; }
+.ex-status.ok    { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.ex-status.warn  { color: var(--warn-text); background: color-mix(in srgb, var(--warn-text) 12%, transparent); }
+.ex-status.err   { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.ex-time { color: var(--text-faint); font-size: 10px; min-width: 130px; text-align: right; }
+.ex-del { color: var(--text-faint); font-size: 11px; padding: 2px 6px; border-radius: 3px; }
+.ex-del:hover { color: var(--danger); background: var(--bg-hover); }
 .subtabs { padding: 6px 12px 0; border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0; }
 .subtabs button, .res-subtabs button { color: var(--text-dim); font-size: 12px; padding: 6px 10px; border-radius: 5px 5px 0 0; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
 .subtabs button.active, .res-subtabs button.active { color: var(--text); border-bottom: 2px solid var(--accent); }

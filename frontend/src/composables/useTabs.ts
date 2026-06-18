@@ -15,8 +15,31 @@ export interface RequestSettings {
   verifySSL?: boolean
 }
 
-export type ReqSubTab = 'params' | 'auth' | 'headers' | 'body' | 'prereq' | 'tests' | 'settings'
+export type ReqSubTab = 'params' | 'auth' | 'headers' | 'body' | 'prereq' | 'tests' | 'examples' | 'settings'
 export type ResSubTab = 'body' | 'headers' | 'cookies' | 'testResults' | 'history'
+
+// SavedExample — a frozen snapshot of a request + its response. Per-request,
+// persisted in detail.examples_json. Powers Postman-style "Save as example"
+// and the planned local mock server (see TODO.md).
+export interface SavedExample {
+  id: string
+  name: string
+  savedAt: number  // ms epoch
+  request: {
+    method: string
+    url: string
+    headers: HeaderRow[]
+    body: string
+    bodyType: BodyType
+  }
+  response: {
+    status: number
+    statusText: string
+    headers: { key: string; value: string; enabled: boolean }[]
+    body: string
+    sizeBytes: number
+  }
+}
 
 export interface TestRow { name: string; passed: boolean; error: string }
 
@@ -54,6 +77,7 @@ export interface ReqTab {
   postScript: string
   description: string
   settings: RequestSettings
+  examples: SavedExample[]
   clean: string // snapshot() at last load/save; '' means not yet baselined
   reqSubTab: ReqSubTab
   resSubTab: ResSubTab
@@ -85,7 +109,7 @@ function blankTab(id: string, name: string, method: string): ReqTab {
   return {
     id, name, method: method || 'GET',
     url: '', params: [], headers: [], body: '', bodyType: 'none', formFields: [], graphqlVars: '', grpcMethod: '', auth: blankAuth(),
-    preScript: '', postScript: '', description: '', settings: {}, clean: '',
+    preScript: '', postScript: '', description: '', settings: {}, examples: [], clean: '',
     reqSubTab: 'headers', resSubTab: 'body',
     loading: true, sending: false, sendError: '', response: null,
     tests: [], logs: [],
@@ -123,6 +147,14 @@ function parseAuth(json: string): Auth {
     if (o && typeof o === 'object') Object.assign(a, o)
   } catch { /* keep blank */ }
   return a
+}
+
+function parseExamples(json: string): SavedExample[] {
+  try {
+    const arr = JSON.parse(json || '[]')
+    if (!Array.isArray(arr)) return []
+    return arr.filter(e => e && typeof e === 'object' && e.id) as SavedExample[]
+  } catch { return [] }
 }
 
 function parseSettings(json: string): RequestSettings {
@@ -164,6 +196,7 @@ async function load(id: string) {
     tab.postScript = d.postScript || ''
     tab.description = d.description || ''
     tab.settings = parseSettings(d.settings)
+    tab.examples = parseExamples(d.examples)
     tab.reqSubTab = d.body ? 'body' : 'headers'
     markClean(tab)
   } finally {
@@ -201,6 +234,7 @@ export function toDetail(tab: ReqTab) {
     grpcMethod: tab.grpcMethod,
     auth: JSON.stringify(tab.auth),
     settings: JSON.stringify(tab.settings),
+    examples: JSON.stringify(tab.examples),
   }
 }
 

@@ -120,6 +120,14 @@ export class RequestDetail {
              */
             this["settings"] = "";
         }
+        if (!("examples" in $$source)) {
+            /**
+             * JSON array of saved request+response snapshots
+             * @member
+             * @type {string}
+             */
+            this["examples"] = "";
+        }
 
         Object.assign(this, $$source);
     }

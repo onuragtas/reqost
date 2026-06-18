@@ -51,15 +51,18 @@ export function GetCookies(url) {
 
 /**
  * SendRequest runs the optional pre-request script, executes the request, then
- * runs the optional test script. reqId lets the UI cancel via Cancel.
+ * runs the optional test script. reqId lets the UI cancel via Cancel. reqName
+ * is the request's display name — used as the key for
+ * `{{Name.response.body.path}}` chaining references.
  * @param {string} reqId
+ * @param {string} reqName
  * @param {httpclient$0.Request} req
  * @param {string} preScript
  * @param {string} postScript
  * @returns {$CancellablePromise<$models.SendResult | null>}
  */
-export function SendRequest(reqId, req, preScript, postScript) {
-    return $Call.ByID(1404814375, reqId, req, preScript, postScript).then(/** @type {($result: any) => any} */(($result) => {
+export function SendRequest(reqId, reqName, req, preScript, postScript) {
+    return $Call.ByID(1404814375, reqId, reqName, req, preScript, postScript).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType3($result);
     }));
 }

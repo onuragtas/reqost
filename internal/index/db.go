@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS detail (
 	graphql_vars  TEXT NOT NULL DEFAULT '',
 	grpc_method   TEXT NOT NULL DEFAULT '',
 	auth_json     TEXT NOT NULL DEFAULT '',
-	settings_json TEXT NOT NULL DEFAULT '{}'
+	settings_json TEXT NOT NULL DEFAULT '{}',
+	examples_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
@@ -96,6 +97,7 @@ func migrate(conn *sql.DB) {
 		`ALTER TABLE detail ADD COLUMN grpc_method TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE detail ADD COLUMN auth_json TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE detail ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE detail ADD COLUMN examples_json TEXT NOT NULL DEFAULT '[]'`,
 	} {
 		_, _ = conn.Exec(stmt) // ignore "duplicate column name"
 	}

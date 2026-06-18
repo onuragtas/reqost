@@ -70,13 +70,14 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [x] **mTLS / client certificates** — Settings'te host pattern → cert/key path; wildcard + suffix match; per-request fresh TLS transport (`client.go::matchClientCert`)
 - [x] **Vault — masked secrets** — Env var `secret` flag, `type="password"` + 👁 reveal (`envstore.Var.Secret`, `EnvironmentsModal.vue`)
 - [x] **Proxy settings (global + per-request)** — Settings → Proxy URL, cache'li transport per-proxy (`client.go::transportFor`)
+- [x] **Save as Example** — `detail.examples_json` migrate, Examples sub-tab + response panelinde "★ Save as example" düğmesi, load/delete/save (`useTabs.ts::SavedExample`, `RequestWorkbench.vue::saveAsExample`)
+- [x] **Request chaining — response refs** — `{{Login.response.body.user.id}}`, `{{Login.response.headers.X-Auth}}`, `{{Login.response.status}}`. ExecService in-memory cache name→last response; `httpclient.ResolveResponseRefs` send öncesi inject (`internal/httpclient/refs.go` + test, `exec_service.go`, frontend `SendRequest(reqId, reqName, ...)`)
+- [x] **CI Linux apt-cache** — `awalsh128/cache-apt-pkgs-action` `libgtk-4-dev libwebkitgtk-6.0-dev pkg-config` .deb arşivlerini cache'ler; ikinci build'den itibaren apt indirme atlanır
 - [x] **gRPC streaming başlığı** (eski parite içinde, henüz değil — aşağıda)
 
 ### Devam edilecek
 
 **Orta efor (4–8 saat her biri)**
-- [ ] **Save as Example** — Response'u `detail.examples_json`'a snapshot. Workbench Examples sekmesi. Mock server için ön gereksinim.
-- [ ] **Request chaining — response reference syntax** — Insomnia tarzı `{{Login.response.body.$.token}}`. Backend in-memory cache name-keyed. `interpolate` öncesi resolve.
 - [ ] **SSE (Server-Sent Events) console** — `text/event-stream` Accept → `SseConsole.vue` (WsConsole pattern). Line-by-line scan → `sse:event` emit.
 - [ ] **GraphQL schema introspection + autocomplete** — `__schema` POST cache. CodeMirror graphql language (CodeMirror upgrade sonrası).
 - [ ] **gRPC streaming (server/client/bidi)** — `StreamCall` method, `grpc:event` emit, `GrpcConsole.vue` Send/Recv panel.
