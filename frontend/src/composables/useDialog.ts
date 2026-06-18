@@ -14,6 +14,7 @@ const state = reactive({
   placeholder: '',
   okLabel: 'OK',
   danger: false,
+  link: null as null | { url: string; label: string },
   _resolve: null as null | ((v: any) => void),
 })
 
@@ -25,7 +26,7 @@ function finish(v: any) {
 }
 
 export function useDialog() {
-  function prompt(title: string, defaultValue = '', placeholder = ''): Promise<string | null> {
+  function prompt(title: string, defaultValue = '', placeholder = '', link?: { url: string; label: string }): Promise<string | null> {
     return new Promise((res) => {
       state.open = true
       state.mode = 'prompt'
@@ -34,6 +35,7 @@ export function useDialog() {
       state.placeholder = placeholder
       state.okLabel = 'OK'
       state.danger = false
+      state.link = link ?? null
       state._resolve = res
     })
   }
@@ -47,8 +49,8 @@ export function useDialog() {
       state._resolve = res
     })
   }
-  function submit() { finish(state.mode === 'prompt' ? state.value : true) }
-  function cancel() { finish(state.mode === 'prompt' ? null : false) }
+  function submit() { state.link = null; finish(state.mode === 'prompt' ? state.value : true) }
+  function cancel() { state.link = null; finish(state.mode === 'prompt' ? null : false) }
 
   return { state, prompt, confirm, submit, cancel }
 }

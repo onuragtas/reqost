@@ -11,6 +11,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as index$0 from "./internal/index/models.js";
 
 /**
+ * ClearAll removes every item from the collection index.
+ * @returns {$CancellablePromise<void>}
+ */
+export function ClearAll() {
+    return $Call.ByID(73446265);
+}
+
+/**
  * CreateFolder adds a new folder under parentID (empty == root).
  * @param {string} parentID
  * @param {string} name
@@ -107,6 +115,18 @@ export function GetRootItems() {
     return $Call.ByID(47490365).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType1($result);
     }));
+}
+
+/**
+ * ImportAllFromPostman fetches every collection and environment from the
+ * Postman API using the given API key, then imports them all.
+ * Collections are fetched in parallel (up to 8 concurrent requests); SQLite
+ * writes are serialised. Environments are fetched in parallel afterward.
+ * @param {string} apiKey
+ * @returns {$CancellablePromise<void>}
+ */
+export function ImportAllFromPostman(apiKey) {
+    return $Call.ByID(4127778447, apiKey);
 }
 
 /**

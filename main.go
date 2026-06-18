@@ -44,6 +44,8 @@ func main() {
 
 	svc.setEmitter(app.Event)
 	svc.setDialog(app.Dialog)
+	svc.setEnvSvc(envSvc)
+	envSvc.setDialog(app.Dialog)
 	wsSvc.setEmitter(app.Event)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
