@@ -4,9 +4,17 @@ import "encoding/json"
 
 // Postman Collection Format v2.1
 
+type CollectionVar struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Enabled bool   `json:"enabled"`
+	Type    string `json:"type,omitempty"`
+}
+
 type Collection struct {
-	Info CollectionInfo `json:"info"`
-	Item []Item         `json:"item"`
+	Info     CollectionInfo  `json:"info"`
+	Item     []Item          `json:"item"`
+	Variable []CollectionVar `json:"variable,omitempty"`
 }
 
 type CollectionInfo struct {

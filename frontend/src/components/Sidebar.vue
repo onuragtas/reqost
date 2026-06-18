@@ -4,7 +4,7 @@ import { RecycleScroller } from 'vue-virtual-scroller'
 import { Events } from '@wailsio/runtime'
 import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
-  GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL,
+  GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL, ImportAllFromPostman, ClearAll,
 } from '../../bindings/reqost/collectionservice'
 import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
@@ -133,10 +133,12 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'New WebSocket', run: () => openAdhoc({ name: 'WebSocket', method: 'GET', url: 'wss://' }) },
       { label: 'New gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
       { label: 'Run Collection', run: () => runColl('') },
+      { label: 'Import all from Postman…', run: onImportAllFromPostman },
       { label: 'Import Collection…', run: onImport },
       { label: 'Import OpenAPI…', run: onImportOpenAPI },
       { label: 'Import from URL…', run: onImportFromURL },
       { label: 'Export Collection…', run: onExport },
+      { label: 'Delete All', run: onClearAll, danger: true },
     ],
   }
 }
@@ -222,15 +224,22 @@ const statusMsg = ref('')
 onMounted(() => {
   loadRoot()
 
-  Events.On('collection:importing', () => {
-    statusMsg.value = 'Indexing...'
+  Events.On('collection:importing', (ev: any) => {
+    const msg = ev?.data ?? ev
+    statusMsg.value = (typeof msg === 'string' && msg !== 'postman') ? msg : 'Indexing...'
   })
-  Events.On('collection:ready', () => {
-    statusMsg.value = ''
+  Events.On('collection:ready', (ev: any) => {
+    const msg = ev?.data ?? ev
+    if (typeof msg === 'string' && msg.startsWith('Imported ')) {
+      statusMsg.value = msg
+      setTimeout(() => { if (statusMsg.value === msg) statusMsg.value = '' }, 3000)
+    } else {
+      statusMsg.value = ''
+    }
     loadRoot()
   })
-  Events.On('collection:error', (ev) => {
-    statusMsg.value = `Error: ${(ev as any).data ?? ev}`
+  Events.On('collection:error', (ev: any) => {
+    statusMsg.value = `Error: ${ev?.data ?? ev}`
   })
 })
 
@@ -263,6 +272,18 @@ async function onImportFromURL() {
     await ImportFromURL(url.trim())
   } catch (e) {
     flashError('Import failed', e)
+  }
+}
+
+async function onImportEnv() {
+  try {
+    const name = await PickImportEnv()
+    if (name) {
+      statusMsg.value = `Environment "${name}" imported`
+      setTimeout(() => { if (statusMsg.value.startsWith('Environment')) statusMsg.value = '' }, 2500)
+    }
+  } catch (e) {
+    flashError('Env import failed', e)
   }
 }
 

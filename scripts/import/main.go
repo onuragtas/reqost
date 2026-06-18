@@ -17,7 +17,7 @@ func main() {
 		path = os.Args[1]
 	}
 
-	items, err := collection.ParseFile(path)
+	items, _, err := collection.ParseFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse: %v\n", err)
 		os.Exit(1)

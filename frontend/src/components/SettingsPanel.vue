@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Browser } from '@wailsio/runtime'
 import { useTheme } from '../composables/useTheme'
 import { useSettings } from '../composables/useSettings'
 import { useUpdate } from '../composables/useUpdate'
@@ -15,7 +16,7 @@ const showNotes = ref(false)
 RepoSlug().then(s => { repoSlug.value = s }).catch(() => {})
 
 function openReleases() {
-  if (repoSlug.value) window.open(`https://github.com/${repoSlug.value}/releases`, '_blank')
+  if (repoSlug.value) Browser.OpenURL(`https://github.com/${repoSlug.value}/releases`)
 }
 </script>
 

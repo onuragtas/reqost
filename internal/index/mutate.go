@@ -463,3 +463,24 @@ func nonEmptyJSONObject(s string) string {
 	}
 	return s
 }
+
+// ClearAll removes every node, detail row, FTS entry, and import-path meta
+// from the index, effectively resetting it to empty.
+func (db *DB) ClearAll() error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		"DELETE FROM tree",
+		"DELETE FROM detail",
+		"DELETE FROM search_fts",
+		"DELETE FROM meta",
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("clear %s: %w", stmt, err)
+		}
+	}
+	return tx.Commit()
+}
