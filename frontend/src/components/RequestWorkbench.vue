@@ -14,10 +14,13 @@ import { recordReqHistory, loadReqHistory, type ReqHistoryEntry } from '../compo
 import { generatePython, generateJS, generateGo, type CodeLang } from '../composables/useCodeGen'
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
+import { useVarHint } from '../composables/useVarHint'
 
 const { active, closeTab } = useTabs()
 const dialog = useDialog()
 const { activeVars, applyVars } = useEnv()
+const { varHint, showVarHint, hideVarHint } = useVarHint()
+const varFmt = (n: string) => '{{' + n + '}}'
 const { record } = useHistory()
 const { refreshNode } = useTree()
 const { settings: appSettings } = useSettings()
@@ -339,7 +342,7 @@ function onSetVerifySSL(s: string) {
         <select v-model="active.method" class="method" :style="{ color: METHOD_COLORS[active.method] ?? 'var(--text-dim)' }">
           <option v-for="m in METHODS" :key="m" :value="m">{{ m }}</option>
         </select>
-        <input v-model="active.url" class="url" :placeholder="URL_PLACEHOLDER" @input="onUrlInput" @keyup.enter="send" @paste="onUrlPaste" />
+        <input v-model="active.url" class="url" :placeholder="URL_PLACEHOLDER" @input="onUrlInput" @keyup.enter="send" @paste="onUrlPaste" @mouseenter="showVarHint($event, active.url)" @mouseleave="hideVarHint" />
         <button v-if="!active.sending" class="send" @click="send">Send</button>
         <button v-else class="cancel" @click="cancel">Cancel</button>
         <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
@@ -382,8 +385,8 @@ function onSetVerifySSL(s: string) {
             <div v-if="active.reqSubTab === 'params'" class="kv">
               <div v-for="(p, i) in active.params" :key="i" class="kv-row">
                 <input type="checkbox" v-model="p.enabled" @change="syncUrl" />
-                <input v-model="p.key" placeholder="Key" class="kv-key" @input="syncUrl" />
-                <input v-model="p.value" placeholder="Value" class="kv-val" @input="syncUrl" />
+                <input v-model="p.key" placeholder="Key" class="kv-key" @input="syncUrl" @mouseenter="showVarHint($event, p.key)" @mouseleave="hideVarHint" />
+                <input v-model="p.value" placeholder="Value" class="kv-val" @input="syncUrl" @mouseenter="showVarHint($event, p.value)" @mouseleave="hideVarHint" />
                 <button class="kv-del" @click="removeParam(i)">✕</button>
               </div>
               <button class="add" @click="addParam">+ Add query param</button>
@@ -398,15 +401,15 @@ function onSetVerifySSL(s: string) {
                 </select>
               </label>
               <template v-if="active.auth.type === 'bearer'">
-                <input v-model="active.auth.token" class="auth-in" placeholder="Token" />
+                <input v-model="active.auth.token" class="auth-in" placeholder="Token" @mouseenter="showVarHint($event, active.auth.token)" @mouseleave="hideVarHint" />
               </template>
               <template v-else-if="active.auth.type === 'basic'">
-                <input v-model="active.auth.username" class="auth-in" placeholder="Username" />
-                <input v-model="active.auth.password" class="auth-in" placeholder="Password" />
+                <input v-model="active.auth.username" class="auth-in" placeholder="Username" @mouseenter="showVarHint($event, active.auth.username)" @mouseleave="hideVarHint" />
+                <input v-model="active.auth.password" class="auth-in" placeholder="Password" @mouseenter="showVarHint($event, active.auth.password)" @mouseleave="hideVarHint" />
               </template>
               <template v-else-if="active.auth.type === 'apikey'">
-                <input v-model="active.auth.key" class="auth-in" placeholder="Header name (e.g. X-API-Key)" />
-                <input v-model="active.auth.value" class="auth-in" placeholder="Value" />
+                <input v-model="active.auth.key" class="auth-in" placeholder="Header name (e.g. X-API-Key)" @mouseenter="showVarHint($event, active.auth.key)" @mouseleave="hideVarHint" />
+                <input v-model="active.auth.value" class="auth-in" placeholder="Value" @mouseenter="showVarHint($event, active.auth.value)" @mouseleave="hideVarHint" />
               </template>
               <p v-if="active.auth.type !== 'none'" class="hint">{{ VAR_HINT }}</p>
             </div>
@@ -415,8 +418,8 @@ function onSetVerifySSL(s: string) {
             <div v-else-if="active.reqSubTab === 'headers'" class="kv">
               <div v-for="(h, i) in active.headers" :key="i" class="kv-row">
                 <input type="checkbox" v-model="h.enabled" />
-                <input v-model="h.key" placeholder="Key" class="kv-key" />
-                <input v-model="h.value" placeholder="Value" class="kv-val" />
+                <input v-model="h.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, h.key)" @mouseleave="hideVarHint" />
+                <input v-model="h.value" placeholder="Value" class="kv-val" @mouseenter="showVarHint($event, h.value)" @mouseleave="hideVarHint" />
                 <button class="kv-del" @click="removeHeader(i)">✕</button>
               </div>
               <button class="add" @click="addHeader">+ Add header</button>
@@ -433,6 +436,7 @@ function onSetVerifySSL(s: string) {
               <textarea
                 v-else-if="active.bodyType === 'raw' || active.bodyType === 'json'"
                 v-model="active.body" class="body-area" spellcheck="false" placeholder="Request body…"
+                @mouseenter="showVarHint($event, active.body)" @mouseleave="hideVarHint"
               />
               <div v-else-if="active.bodyType === 'graphql'" class="gql">
                 <div class="gql-label">Query</div>
@@ -443,12 +447,12 @@ function onSetVerifySSL(s: string) {
               <div v-else class="kv">
                 <div v-for="(f, i) in active.formFields" :key="i" class="kv-row">
                   <input type="checkbox" v-model="f.enabled" />
-                  <input v-model="f.key" placeholder="Key" class="kv-key" />
+                  <input v-model="f.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, f.key)" @mouseleave="hideVarHint" />
                   <select v-if="active.bodyType === 'formdata'" v-model="f.type" class="f-type">
                     <option value="text">Text</option>
                     <option value="file">File</option>
                   </select>
-                  <input v-model="f.value" :placeholder="f.type === 'file' ? '/path/to/file' : 'Value'" class="kv-val" />
+                  <input v-model="f.value" :placeholder="f.type === 'file' ? '/path/to/file' : 'Value'" class="kv-val" @mouseenter="showVarHint($event, f.value)" @mouseleave="hideVarHint" />
                   <button class="kv-del" @click="removeForm(i)">✕</button>
                 </div>
                 <button class="add" @click="addForm">+ Add field</button>
@@ -597,6 +601,16 @@ function onSetVerifySSL(s: string) {
       </div>
     </template>
   </div>
+
+  <Teleport to="body">
+    <div v-if="varHint.visible" class="var-hint" :style="{ left: varHint.x + 'px', top: varHint.y + 'px' }">
+      <div v-for="p in varHint.pairs" :key="p.name" class="var-hint-row">
+        <span class="var-hint-name">{{ varFmt(p.name) }}</span>
+        <span class="var-hint-sep">→</span>
+        <span :class="p.found ? 'var-hint-val' : 'var-hint-unset'">{{ p.found ? (p.value || '(empty)') : 'not set' }}</span>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -721,4 +735,25 @@ function onSetVerifySSL(s: string) {
 .res-msg { display: flex; align-items: center; justify-content: center; flex: 1; font-size: 13px; padding: 16px; text-align: center; }
 .res-msg.muted { color: var(--text-faint); }
 .res-msg.err { color: var(--danger); }
+</style>
+
+<style>
+.var-hint {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+  pointer-events: none;
+  max-width: 400px;
+  font-size: 11px;
+  font-family: monospace;
+}
+.var-hint-row { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; white-space: pre; }
+.var-hint-name { color: var(--accent); }
+.var-hint-sep { color: var(--text-faint); }
+.var-hint-val { color: var(--ok); word-break: break-all; white-space: normal; }
+.var-hint-unset { color: var(--text-faint); font-style: italic; }
 </style>

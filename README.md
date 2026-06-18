@@ -58,3 +58,5 @@ Take a moment to familiarize yourself with your project structure:
 
 Happy coding with Wails3! If you encounter any issues or have questions, don't hesitate to consult the documentation or reach out to the Wails community.
 
+
+
