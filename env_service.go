@@ -17,7 +17,7 @@ import (
 )
 
 // EnvService exposes environment persistence to the frontend. The frontend owns
-// editing; this just loads/saves the whole document.
+// editing; this just loads/saves the whole document and handles imports.
 type EnvService struct {
 	store  *envstore.Store
 	dialog *application.DialogManager
@@ -65,7 +65,7 @@ func (s *EnvService) PickImportEnv() (string, error) {
 	}
 	name, vars, err := collection.ParseEnvBytes(data)
 	if err != nil {
-		// Might be a collection with only variables — try that.
+		// Might be a collection with only root variables — try that.
 		_, collVars, cerr := collection.ParseBytes(data)
 		if cerr != nil || len(collVars) == 0 {
 			return "", fmt.Errorf("not a Postman environment file: %w", err)
@@ -79,6 +79,7 @@ func (s *EnvService) PickImportEnv() (string, error) {
 }
 
 // ImportEnvFromURL fetches a Postman environment JSON from a URL and imports it.
+// Returns the imported environment name on success.
 func (s *EnvService) ImportEnvFromURL(rawURL string) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(rawURL)
@@ -114,7 +115,7 @@ func (s *EnvService) mergeCollectionVars(sourceName string, vars []collection.Co
 		return
 	}
 
-	// Derive a friendly name.
+	// Derive a friendly name — strip any path prefix and extension.
 	name := sourceName
 	if idx := strings.LastIndexAny(name, "/\\"); idx >= 0 {
 		name = name[idx+1:]
@@ -129,7 +130,6 @@ func (s *EnvService) mergeCollectionVars(sourceName string, vars []collection.Co
 		newVars = append(newVars, envstore.Var{Key: v.Key, Value: v.Value, Enabled: v.Enabled})
 	}
 
-	// Update existing env with same name, or append a new one.
 	found := false
 	for i, env := range st.Environments {
 		if env.Name == name {

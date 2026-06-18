@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -190,6 +193,11 @@ func (s *CollectionService) MoveNode(id, newParentID string, newIndex int) error
 	return s.db.MoveNode(id, newParentID, newIndex)
 }
 
+// ClearAll removes every item from the collection index.
+func (s *CollectionService) ClearAll() error {
+	return s.db.ClearAll()
+}
+
 // DuplicateNode creates a deep copy of a request or folder (including all
 // descendants) as the next sibling of the original.
 func (s *CollectionService) DuplicateNode(id string) (index.TreeNode, error) {
@@ -257,13 +265,13 @@ func (s *CollectionService) reimport(path string) {
 		return
 	}
 
-	if len(vars) > 0 && s.envSvc != nil {
-		s.envSvc.mergeCollectionVars(path, vars)
-	}
-
 	// The SQLite index is the source of truth (edits are written to it, not the
 	// file), so we intentionally do NOT auto-watch the file for re-import — that
 	// would clobber user edits. Import is a deliberate, user-initiated replace.
+
+	if len(vars) > 0 && s.envSvc != nil {
+		s.envSvc.mergeCollectionVars(path, vars)
+	}
 
 	log.Printf("indexed %d items from %s", len(items), path)
 	s.emit("collection:ready", path)
@@ -363,6 +371,176 @@ func (s *CollectionService) ImportFromURL(rawURL string) error {
 		}
 		log.Printf("imported OpenAPI %d items from URL %s", len(items), rawURL)
 		s.emit("collection:ready", rawURL)
+	}()
+	return nil
+}
+
+// ImportAllFromPostman fetches every collection and environment from the
+// Postman API using the given API key, then imports them all.
+// Collections are fetched in parallel (up to 8 concurrent requests); SQLite
+// writes are serialised. Environments are fetched in parallel afterward.
+func (s *CollectionService) ImportAllFromPostman(apiKey string) error {
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("API key is required")
+	}
+	go func() {
+		s.emit("collection:importing", "Connecting to Postman…")
+
+		// Shared HTTP client — reuses connections across goroutines.
+		client := &http.Client{Timeout: 30 * time.Second}
+
+		get := func(url string) ([]byte, error) {
+			req, err := http.NewRequest("GET", url, nil)
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("X-Api-Key", apiKey)
+			req.Header.Set("Accept", "application/json")
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusUnauthorized {
+				return nil, fmt.Errorf("invalid Postman API key")
+			}
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+			}
+			return io.ReadAll(io.LimitReader(resp.Body, 50<<20))
+		}
+
+		// ── 1. List collections ──────────────────────────────────────────────
+		listData, err := get("https://api.getpostman.com/collections")
+		if err != nil {
+			s.emit("collection:error", err.Error())
+			return
+		}
+		var colList struct {
+			Collections []struct {
+				UID  string `json:"uid"`
+				Name string `json:"name"`
+			} `json:"collections"`
+		}
+		if err := json.Unmarshal(listData, &colList); err != nil {
+			s.emit("collection:error", "parse collection list: "+err.Error())
+			return
+		}
+		total := len(colList.Collections)
+
+		// ── 2. Fetch all collections in parallel ─────────────────────────────
+		type fetchedCol struct {
+			sortOrder int
+			name      string
+			wrapped   []collection.FlatItem
+			vars      []collection.CollectionVar
+		}
+
+		const concurrency = 8
+		sem := make(chan struct{}, concurrency)
+		resultsCh := make(chan fetchedCol, total)
+		var fetched atomic.Int32
+		var wg sync.WaitGroup
+
+		for i, c := range colList.Collections {
+			wg.Add(1)
+			sem <- struct{}{} // acquire slot
+			go func(i int, uid, name string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				n := int(fetched.Add(1))
+				s.emit("collection:importing", fmt.Sprintf("Fetching %d/%d: %s", n, total, name))
+
+				data, err := get("https://api.getpostman.com/collections/" + uid)
+				if err != nil {
+					log.Printf("postman: skip %s: %v", name, err)
+					return
+				}
+				items, vars, err := collection.ParseBytes(data)
+				if err != nil || len(items) == 0 {
+					log.Printf("postman: parse %s: %v", name, err)
+					return
+				}
+
+				rootID := "postman-col-" + uid
+				wrapped := make([]collection.FlatItem, 0, len(items)+1)
+				wrapped = append(wrapped, collection.FlatItem{
+					ID: rootID, Name: name, Type: "folder", SortOrder: i,
+				})
+				for _, item := range items {
+					if item.ParentID == "" {
+						item.ParentID = rootID
+					}
+					wrapped = append(wrapped, item)
+				}
+				resultsCh <- fetchedCol{i, name, wrapped, vars}
+			}(i, c.UID, c.Name)
+		}
+
+		wg.Wait()
+		close(resultsCh)
+
+		// ── 3. Index sequentially (SQLite single-writer) ─────────────────────
+		s.emit("collection:importing", fmt.Sprintf("Indexing %d collections…", total))
+		imported := 0
+		for r := range resultsCh {
+			if err := s.db.AddItems(r.wrapped); err != nil {
+				log.Printf("postman: index %s: %v", r.name, err)
+				continue
+			}
+			if len(r.vars) > 0 && s.envSvc != nil {
+				s.envSvc.mergeCollectionVars(r.name, r.vars)
+			}
+			imported++
+		}
+
+		// ── 4. Fetch environments in parallel ────────────────────────────────
+		envData, err := get("https://api.getpostman.com/environments")
+		if err == nil && s.envSvc != nil {
+			var envList struct {
+				Environments []struct {
+					UID  string `json:"uid"`
+					Name string `json:"name"`
+				} `json:"environments"`
+			}
+			if json.Unmarshal(envData, &envList) == nil {
+				type fetchedEnv struct {
+					name string
+					vars []collection.CollectionVar
+				}
+				envTotal := len(envList.Environments)
+				envCh := make(chan fetchedEnv, envTotal)
+				var envWg sync.WaitGroup
+
+				for _, e := range envList.Environments {
+					envWg.Add(1)
+					sem <- struct{}{}
+					go func(uid, name string) {
+						defer envWg.Done()
+						defer func() { <-sem }()
+						data, err := get("https://api.getpostman.com/environments/" + uid)
+						if err != nil {
+							log.Printf("postman: skip env %s: %v", name, err)
+							return
+						}
+						n, vars, err := collection.ParseEnvBytes(data)
+						if err != nil || len(vars) == 0 {
+							return
+						}
+						envCh <- fetchedEnv{n, vars}
+					}(e.UID, e.Name)
+				}
+				envWg.Wait()
+				close(envCh)
+				for r := range envCh {
+					s.envSvc.mergeCollectionVars(r.name, r.vars)
+				}
+			}
+		}
+
+		log.Printf("postman import: %d/%d collections", imported, total)
+		s.emit("collection:ready", fmt.Sprintf("Imported %d collections from Postman", imported))
 	}()
 	return nil
 }

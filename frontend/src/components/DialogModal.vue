@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { watch, nextTick, ref } from 'vue'
+import { Browser } from '@wailsio/runtime'
 import { useDialog } from '../composables/useDialog'
 
 const { state, submit, cancel } = useDialog()
@@ -8,12 +9,21 @@ const input = ref<HTMLInputElement | null>(null)
 watch(() => state.open, (open) => {
   if (open && state.mode === 'prompt') nextTick(() => input.value?.focus())
 })
+
+function openLink(url: string) { Browser.OpenURL(url) }
 </script>
 
 <template>
   <div v-if="state.open" class="overlay" @click.self="cancel" @keydown.esc="cancel">
     <div class="dialog">
       <div class="title">{{ state.title }}</div>
+      <a
+        v-if="state.link"
+        class="dialog-link"
+        :href="state.link.url"
+        target="_blank"
+        @click.prevent="openLink(state.link!.url)"
+      >{{ state.link.label }} ↗</a>
       <input
         v-if="state.mode === 'prompt'"
         ref="input"
@@ -34,7 +44,9 @@ watch(() => state.open, (open) => {
 <style scoped>
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 300; }
 .dialog { width: 420px; max-width: 90vw; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 10px; padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-.title { font-size: 14px; color: var(--text); margin-bottom: 12px; }
+.title { font-size: 14px; color: var(--text); margin-bottom: 8px; }
+.dialog-link { display: inline-block; font-size: 11px; color: var(--accent); margin-bottom: 12px; }
+.dialog-link:hover { text-decoration: underline; }
 .input { width: 100%; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); font: 13px monospace; padding: 9px 11px; margin-bottom: 14px; }
 .input:focus { outline: none; border-color: var(--accent); }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
