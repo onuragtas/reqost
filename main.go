@@ -24,8 +24,8 @@ func main() {
 	wsSvc := NewWSService()
 
 	app := application.New(application.Options{
-		Name:        "reqost",
-		Description: "High-performance API client",
+		Name:        "ReQost",
+		Description: "High-performance desktop API client",
 		Services: []application.Service{
 			application.NewService(svc),
 			application.NewService(NewExecService()),
@@ -47,7 +47,7 @@ func main() {
 	wsSvc.setEmitter(app.Event)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "reqost",
+		Title: "ReQost",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
 			Backdrop:                application.MacBackdropTranslucent,

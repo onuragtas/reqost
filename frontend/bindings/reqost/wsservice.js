@@ -17,10 +17,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as httpclient$0 from "./internal/httpclient/models.js";
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as $models from "./models.js";
-
 /**
  * Close terminates a connection.
  * @param {string} connID
@@ -51,12 +47,4 @@ export function Connect(connID, url, headers) {
  */
 export function Send(connID, data) {
     return $Call.ByID(382304349, connID, data);
-}
-
-/**
- * @param {$models.EventEmitter} e
- * @returns {$CancellablePromise<void>}
- */
-export function SetEmitter(e) {
-    return $Call.ByID(89951633, e);
 }

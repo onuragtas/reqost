@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { SendRequest, Cancel, GetCookies, ClearCookies } from '../../bindings/reqost/execservice'
 import { SaveRequest } from '../../bindings/reqost/collectionservice'
-import { useTabs, toDetail, markClean, type ReqSubTab, type ResSubTab, type AuthType, type BodyType } from '../composables/useTabs'
+import { useTabs, toDetail, markClean, isDirty, type ReqSubTab, type ResSubTab, type AuthType, type BodyType } from '../composables/useTabs'
 import { useEnv } from '../composables/useEnv'
 import { useHistory } from '../composables/useHistory'
 import { useTree } from '../composables/useTree'
 import { useSettings } from '../composables/useSettings'
+import { useDialog } from '../composables/useDialog'
 import { parseQuery, buildUrl, baseOf } from '../composables/url'
+import { parseCurl, toCurl } from '../composables/curl'
+import { recordReqHistory, loadReqHistory, type ReqHistoryEntry } from '../composables/useRequestHistory'
+import { generatePython, generateJS, generateGo, type CodeLang } from '../composables/useCodeGen'
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
 
-const { active } = useTabs()
+const { active, closeTab } = useTabs()
+const dialog = useDialog()
 const { activeVars, applyVars } = useEnv()
 const { record } = useHistory()
 const { refreshNode } = useTree()
@@ -52,6 +57,44 @@ async function save() {
   }
 }
 
+// ── cURL paste ────────────────────────────────────────────────────────────────
+function onUrlPaste(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text') ?? ''
+  if (!text.trim().startsWith('curl ')) return
+  const parsed = parseCurl(text)
+  if (!parsed || !active.value) return
+  e.preventDefault()
+  const t = active.value
+  t.method = parsed.method
+  t.url = parsed.url
+  t.params = parseQuery(parsed.url)
+  t.headers = parsed.headers
+  t.body = parsed.body
+  t.bodyType = parsed.bodyType
+  if (parsed.formFields.length) t.formFields = parsed.formFields
+  // Switch to Body tab so user sees the pasted data
+  if (parsed.body) t.reqSubTab = 'body'
+}
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
+async function maybeCloseActive() {
+  const t = active.value
+  if (!t) return
+  if (isDirty(t)) {
+    const ok = await dialog.confirm(`Close "${t.name}"? Unsaved changes will be lost.`)
+    if (!ok) return
+  }
+  closeTab(t.id)
+}
+function onKeyDown(e: KeyboardEvent) {
+  if (!e.metaKey && !e.ctrlKey) return
+  if (e.key === 'Enter') { e.preventDefault(); send() }
+  else if (e.key === 's') { e.preventDefault(); save() }
+  else if (e.key === 'w') { e.preventDefault(); maybeCloseActive() }
+}
+onMounted(() => window.addEventListener('keydown', onKeyDown))
+onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
+
 function addForm() { active.value?.formFields.push({ key: '', value: '', type: 'text', enabled: true }) }
 function removeForm(i: number) { active.value?.formFields.splice(i, 1) }
 
@@ -80,7 +123,48 @@ const RES_TABS: { id: ResSubTab; label: string; soon?: boolean }[] = [
   { id: 'headers', label: 'Headers' },
   { id: 'cookies', label: 'Cookies' },
   { id: 'testResults', label: 'Test Results' },
+  { id: 'history', label: 'History' },
 ]
+
+// ── Per-request response history ──────────────────────────────────────────
+const reqHistory = ref<ReqHistoryEntry[]>([])
+const selHistIdx = ref(-1)
+watch(() => active.value?.id, (id) => {
+  reqHistory.value = id ? loadReqHistory(id) : []
+  selHistIdx.value = -1
+}, { immediate: true })
+const prettyHistBody = computed(() => {
+  const e = reqHistory.value[selHistIdx.value]
+  if (!e) return ''
+  try { return JSON.stringify(JSON.parse(e.body), null, 2) } catch { return e.body }
+})
+function histStatusColor(s: number) {
+  if (s >= 200 && s < 300) return 'var(--ok)'
+  if (s >= 300 && s < 400) return 'var(--warn-text)'
+  if (s >= 400) return 'var(--danger)'
+  return 'var(--text-dim)'
+}
+function fmtTs(ts: number) {
+  const d = new Date(ts)
+  return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`
+}
+
+// ── Code generation ────────────────────────────────────────────────────────
+const showCode = ref(false)
+const codeLang = ref<CodeLang>('python')
+const generatedCode = computed(() => {
+  const t = active.value
+  if (!t) return ''
+  const input = { method: t.method, url: t.url, headers: t.headers, body: t.body, bodyType: t.bodyType, auth: t.auth }
+  if (codeLang.value === 'curl') return toCurl(t.method, t.url, t.headers, t.body)
+  if (codeLang.value === 'python') return generatePython(input)
+  if (codeLang.value === 'javascript') return generateJS(input)
+  if (codeLang.value === 'go') return generateGo(input)
+  return ''
+})
+async function copyCode() {
+  try { await navigator.clipboard.writeText(generatedCode.value) } catch { /* ignore */ }
+}
 
 // Literal braces can't appear inside Vue template interpolation, so keep these
 // as plain script constants.
@@ -152,6 +236,11 @@ async function send() {
     if (res?.scriptError) t.logs = [...t.logs, `⚠ ${res.scriptError}`]
     if (res?.vars) applyVars(res.vars)
     t.resSubTab = t.tests.length ? 'testResults' : 'body'
+    if (resp && t.id) {
+      recordReqHistory(t.id, resp.status, resp.timing?.totalMs ?? 0, resp.body ?? '', resp.headers ?? [])
+      reqHistory.value = loadReqHistory(t.id)
+      selHistIdx.value = -1
+    }
     record({
       name: t.name, method: t.method, url: t.url.trim(),
       headers: t.headers.map(h => ({ ...h })), body: t.body, auth: { ...t.auth },
@@ -250,10 +339,26 @@ function onSetVerifySSL(s: string) {
         <select v-model="active.method" class="method" :style="{ color: METHOD_COLORS[active.method] ?? 'var(--text-dim)' }">
           <option v-for="m in METHODS" :key="m" :value="m">{{ m }}</option>
         </select>
-        <input v-model="active.url" class="url" :placeholder="URL_PLACEHOLDER" @input="onUrlInput" @keyup.enter="send" />
+        <input v-model="active.url" class="url" :placeholder="URL_PLACEHOLDER" @input="onUrlInput" @keyup.enter="send" @paste="onUrlPaste" />
         <button v-if="!active.sending" class="send" @click="send">Send</button>
         <button v-else class="cancel" @click="cancel">Cancel</button>
         <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
+        <button class="code-btn" :class="{ active: showCode }" title="Generate code" @click="showCode = !showCode">&lt;/&gt;</button>
+      </div>
+
+      <!-- Code generation panel -->
+      <div v-if="showCode" class="code-panel">
+        <div class="code-header">
+          <select v-model="codeLang" class="lang-select">
+            <option value="curl">cURL</option>
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+            <option value="go">Go</option>
+          </select>
+          <button class="copy-code" @click="copyCode">Copy</button>
+          <button class="code-close" @click="showCode = false">✕</button>
+        </div>
+        <pre class="code-body selectable">{{ generatedCode }}</pre>
       </div>
 
       <div class="split">
@@ -467,7 +572,24 @@ function onSetVerifySSL(s: string) {
                 </div>
               </template>
             </div>
-            <div v-else class="soon"><span>{{ RES_TABS.find(t => t.id === active!.resSubTab)?.label }} — coming in a later phase</span></div>
+            <div v-else-if="active.resSubTab === 'history'" class="hist selectable">
+              <div v-if="!reqHistory.length" class="soon"><span>No history yet — send a request to record it</span></div>
+              <template v-else>
+                <div class="hist-list">
+                  <div
+                    v-for="(e, i) in reqHistory" :key="e.ts"
+                    class="hist-row" :class="{ sel: selHistIdx === i }"
+                    @click="selHistIdx = i"
+                  >
+                    <span class="hist-badge" :style="{ color: histStatusColor(e.status) }">{{ e.status }}</span>
+                    <span class="hist-time">{{ fmtTs(e.ts) }}</span>
+                    <span class="hist-dur">{{ fmtMs(e.ms) }}</span>
+                  </div>
+                </div>
+                <pre v-if="selHistIdx >= 0" class="hist-body">{{ prettyHistBody }}</pre>
+              </template>
+            </div>
+            <div v-else class="soon"><span>{{ RES_TABS.find(t => t.id === active!.resSubTab)?.label }}</span></div>
           </template>
 
           <div v-else class="res-msg muted">Send the request to see the response</div>
@@ -512,6 +634,28 @@ function onSetVerifySSL(s: string) {
 .cancel { background: var(--danger); color: #fff; border-radius: 5px; font-weight: 700; padding: 0 18px; }
 .save { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); padding: 0 14px; }
 .save:disabled { opacity: 0.6; cursor: default; }
+.code-btn { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); padding: 0 10px; font-size: 13px; font-weight: 600; }
+.code-btn:hover, .code-btn.active { color: var(--accent); border-color: var(--accent); }
+
+.code-panel { background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; max-height: 240px; }
+.code-header { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.lang-select { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text); font-size: 12px; padding: 4px 8px; }
+.lang-select:focus { outline: none; border-color: var(--accent); }
+.copy-code { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); font-size: 12px; padding: 4px 12px; }
+.copy-code:hover { color: var(--text); }
+.code-close { margin-left: auto; color: var(--text-faint); font-size: 12px; }
+.code-close:hover { color: var(--text); }
+.code-body { flex: 1; overflow: auto; margin: 0; padding: 10px 14px; font: 12px/1.6 monospace; color: var(--text); background: transparent; white-space: pre; }
+
+.hist { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.hist-list { flex-shrink: 0; max-height: 120px; overflow-y: auto; border-bottom: 1px solid var(--border); }
+.hist-row { display: flex; gap: 12px; align-items: center; padding: 6px 14px; cursor: pointer; font-size: 12px; color: var(--text-dim); }
+.hist-row:hover { background: var(--bg-hover); }
+.hist-row.sel { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.hist-badge { font-weight: 700; font-size: 11px; width: 36px; text-align: right; }
+.hist-time { font-family: monospace; }
+.hist-dur { color: var(--text-faint); margin-left: auto; }
+.hist-body { flex: 1; overflow: auto; margin: 0; padding: 10px 14px; font: 12px/1.6 monospace; color: var(--text); }
 
 .split { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .req { display: flex; flex-direction: column; flex-shrink: 0; max-height: 44%; }

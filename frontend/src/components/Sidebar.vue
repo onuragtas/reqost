@@ -4,7 +4,7 @@ import { RecycleScroller } from 'vue-virtual-scroller'
 import { Events } from '@wailsio/runtime'
 import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
-  GetRequestDetail, MoveNode,
+  GetRequestDetail, MoveNode, DuplicateNode,
 } from '../../bindings/reqost/collectionservice'
 import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
@@ -118,6 +118,7 @@ function openNodeMenu(e: MouseEvent, node: FlatNode) {
     items.push({ label: 'Copy as cURL', run: () => copyCurl(node) })
   }
   items.push(
+    { label: 'Duplicate', run: () => duplicate(node) },
     { label: 'Rename', run: () => rename(node) },
     { label: 'Delete', danger: true, run: () => remove(node) },
   )
@@ -168,6 +169,15 @@ async function rename(node: FlatNode) {
     refreshNode(node.id, { name: name.trim() })
   } catch (e) {
     flashError('Rename failed', e)
+  }
+}
+
+async function duplicate(node: FlatNode) {
+  try {
+    await DuplicateNode(node.id)
+    await reloadChildren(node.parentId)
+  } catch (e) {
+    flashError('Duplicate failed', e)
   }
 }
 

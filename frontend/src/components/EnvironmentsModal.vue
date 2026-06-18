@@ -6,8 +6,8 @@ const { environments, activeId, modalOpen, closeModal, createEnv, deleteEnv, add
 
 const editId = ref('')
 const editing = computed<Environment | null>(() => environments.value.find(e => e.id === editId.value) ?? null)
+const fileInput = ref<HTMLInputElement | null>(null)
 
-// When the modal opens, focus the active env (or the first one).
 watch(modalOpen, (open) => {
   if (open && !editing.value) editId.value = activeId.value || environments.value[0]?.id || ''
 })
@@ -19,6 +19,47 @@ function onCreate() {
 function onDelete(id: string) {
   deleteEnv(id)
   if (editId.value === id) editId.value = environments.value[0]?.id ?? ''
+}
+
+function onExport(env: Environment) {
+  const data = {
+    id: env.id,
+    name: env.name,
+    values: env.vars.map(v => ({ key: v.key, value: v.value, enabled: v.enabled, type: 'default' })),
+    _postman_variable_scope: 'environment',
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${env.name || 'environment'}.postman_environment.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function onImportClick() { fileInput.value?.click() }
+
+function onFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target?.result as string)
+      const name = data.name || file.name.replace(/\.json$/, '')
+      const vars = (data.values || data.vars || []).map((v: any) => ({
+        key: String(v.key ?? ''),
+        value: String(v.value ?? ''),
+        enabled: v.enabled !== false,
+      })).filter((v: any) => v.key)
+      const env = createEnv(name)
+      env.vars = vars
+      touch()
+      editId.value = env.id
+    } catch { /* invalid file */ }
+    if (fileInput.value) fileInput.value.value = ''
+  }
+  reader.readAsText(file)
 }
 </script>
 
@@ -46,13 +87,20 @@ function onDelete(id: string) {
             <span class="env-name">{{ e.name || 'Untitled' }}</span>
             <button class="del" @click.stop="onDelete(e.id)">✕</button>
           </div>
-          <button class="add-env" @click="onCreate">+ New Environment</button>
+          <div class="env-actions">
+            <button class="add-env" @click="onCreate">+ New</button>
+            <button class="add-env" @click="onImportClick">↑ Import</button>
+          </div>
+          <input ref="fileInput" type="file" accept=".json" style="display:none" @change="onFileChange" />
         </div>
 
         <!-- var editor -->
         <div class="editor selectable">
           <template v-if="editing">
-            <input v-model="editing.name" class="name-input" placeholder="Environment name" @input="touch" />
+            <div class="name-row">
+              <input v-model="editing.name" class="name-input" placeholder="Environment name" @input="touch" />
+              <button class="export-btn" title="Export as Postman JSON" @click="onExport(editing)">↓ Export</button>
+            </div>
             <div class="vars-head"><span></span><span>Variable</span><span>Value</span><span></span></div>
             <div class="vars">
               <div v-for="(v, i) in editing.vars" :key="i" class="var-row">
@@ -89,8 +137,13 @@ h3 { font-size: 15px; font-weight: 600; }
 .active-dot.on { background: var(--accent); border-color: var(--accent); }
 .del { color: var(--text-faint); font-size: 11px; width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; }
 .del:hover { background: var(--border-strong); color: var(--danger); }
-.add-env { margin-top: 6px; border: 1px dashed var(--border-strong); border-radius: 6px; color: var(--text-dim); font-size: 12px; padding: 8px; }
+.env-actions { display: flex; gap: 4px; margin-top: 6px; }
+.add-env { flex: 1; border: 1px dashed var(--border-strong); border-radius: 6px; color: var(--text-dim); font-size: 12px; padding: 8px; }
 .add-env:hover { color: var(--text); }
+.name-row { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; }
+.name-row .name-input { flex: 1; margin-bottom: 0; }
+.export-btn { flex-shrink: 0; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-dim); font-size: 12px; padding: 7px 10px; }
+.export-btn:hover { color: var(--text); }
 
 .editor { flex: 1; padding: 16px; overflow-y: auto; }
 .name-input { width: 100%; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 6px; font-size: 14px; font-weight: 600; padding: 8px 10px; margin-bottom: 14px; }

@@ -8,14 +8,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as application$0 from "../github.com/wailsapp/wails/v3/pkg/application/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as index$0 from "./internal/index/models.js";
-
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as $models from "./models.js";
 
 /**
  * CreateFolder adds a new folder under parentID (empty == root).
@@ -49,6 +42,18 @@ export function CreateRequest(parentID, name, method) {
  */
 export function DeleteNode(id) {
     return $Call.ByID(3510978374, id);
+}
+
+/**
+ * DuplicateNode creates a deep copy of a request or folder (including all
+ * descendants) as the next sibling of the original.
+ * @param {string} id
+ * @returns {$CancellablePromise<index$0.TreeNode>}
+ */
+export function DuplicateNode(id) {
+    return $Call.ByID(3846844226, id).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
 }
 
 /**
@@ -198,22 +203,6 @@ export function Search(query) {
     return $Call.ByID(1217559273, query).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType1($result);
     }));
-}
-
-/**
- * @param {application$0.DialogManager | null} d
- * @returns {$CancellablePromise<void>}
- */
-export function SetDialog(d) {
-    return $Call.ByID(1774341391, d);
-}
-
-/**
- * @param {$models.EventEmitter} e
- * @returns {$CancellablePromise<void>}
- */
-export function SetEmitter(e) {
-    return $Call.ByID(3827048675, e);
 }
 
 // Private type creation functions

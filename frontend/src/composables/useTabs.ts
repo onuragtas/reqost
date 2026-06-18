@@ -16,7 +16,7 @@ export interface RequestSettings {
 }
 
 export type ReqSubTab = 'params' | 'auth' | 'headers' | 'body' | 'prereq' | 'tests' | 'settings'
-export type ResSubTab = 'body' | 'headers' | 'cookies' | 'testResults'
+export type ResSubTab = 'body' | 'headers' | 'cookies' | 'testResults' | 'history'
 
 export interface TestRow { name: string; passed: boolean; error: string }
 

@@ -14,11 +14,6 @@ import * as httpclient$0 from "./internal/httpclient/models.js";
 import * as script$0 from "./internal/script/models.js";
 
 /**
- * EventEmitter is satisfied by app.Event in Wails v3.
- * @typedef {any} EventEmitter
- */
-
-/**
  * GRPCResult is the response of a unary call.
  */
 export class GRPCResult {

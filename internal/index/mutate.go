@@ -283,6 +283,145 @@ func (db *DB) MoveNode(id, newParentID string, newIndex int) error {
 	return tx.Commit()
 }
 
+// DuplicateNode creates a deep copy of id (including all descendants for
+// folders) inserted as the next sibling of the original. Returns the new root.
+// All reads happen on db.conn before the write transaction (WAL precaution).
+func (db *DB) DuplicateNode(id string) (TreeNode, error) {
+	type srcRow struct {
+		id, name, parentID, nodeType, method string
+		sortOrder                            int
+	}
+
+	// 1. Read source node.
+	var src srcRow
+	err := db.conn.QueryRow(`
+		SELECT id, name, COALESCE(parent_id,''), type, method, sort_order
+		FROM tree WHERE id = ?`, id).Scan(
+		&src.id, &src.name, &src.parentID, &src.nodeType, &src.method, &src.sortOrder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TreeNode{}, fmt.Errorf("node %s not found", id)
+	}
+	if err != nil {
+		return TreeNode{}, fmt.Errorf("read source: %w", err)
+	}
+
+	// 2. Read full subtree via recursive CTE.
+	subtreeRows, err := db.conn.Query(`
+		WITH RECURSIVE sub(id) AS (
+			SELECT ?
+			UNION ALL
+			SELECT t.id FROM tree t JOIN sub ON t.parent_id = sub.id
+		)
+		SELECT t.id, t.name, COALESCE(t.parent_id,''), t.type, t.method, t.sort_order
+		FROM tree t JOIN sub ON t.id = sub.id`, id)
+	if err != nil {
+		return TreeNode{}, fmt.Errorf("read subtree: %w", err)
+	}
+	var nodes []srcRow
+	for subtreeRows.Next() {
+		var n srcRow
+		if err := subtreeRows.Scan(&n.id, &n.name, &n.parentID, &n.nodeType, &n.method, &n.sortOrder); err != nil {
+			subtreeRows.Close()
+			return TreeNode{}, err
+		}
+		nodes = append(nodes, n)
+	}
+	subtreeRows.Close()
+	if err := subtreeRows.Err(); err != nil {
+		return TreeNode{}, err
+	}
+
+	// 3. Read detail rows for request nodes.
+	type detailRow struct {
+		url, headers, body, preScript, postScript, description string
+		bodyType, formFields, graphqlVars, grpcMethod, auth, settings string
+	}
+	details := make(map[string]detailRow, len(nodes))
+	for _, n := range nodes {
+		if n.nodeType != "request" {
+			continue
+		}
+		var d detailRow
+		e := db.conn.QueryRow(`
+			SELECT COALESCE(url,''), COALESCE(headers_json,'[]'), COALESCE(body,''),
+			       COALESCE(pre_script,''), COALESCE(post_script,''), COALESCE(description,''),
+			       COALESCE(body_type,''), COALESCE(form_fields,'[]'), COALESCE(graphql_vars,''),
+			       COALESCE(grpc_method,''), COALESCE(auth_json,'{}'), COALESCE(settings_json,'{}')
+			FROM detail WHERE id = ?`, n.id).Scan(
+			&d.url, &d.headers, &d.body, &d.preScript, &d.postScript, &d.description,
+			&d.bodyType, &d.formFields, &d.graphqlVars, &d.grpcMethod, &d.auth, &d.settings)
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return TreeNode{}, fmt.Errorf("read detail %s: %w", n.id, e)
+		}
+		details[n.id] = d
+	}
+
+	// 4. Next sort_order slot for the duplicated root.
+	var nextOrder int
+	if err := db.conn.QueryRow(`SELECT COALESCE(MAX(sort_order)+1, 0) FROM tree WHERE parent_id IS ?`,
+		nullStr(src.parentID)).Scan(&nextOrder); err != nil {
+		return TreeNode{}, fmt.Errorf("next order: %w", err)
+	}
+
+	// 5. Assign new IDs to every node in the subtree.
+	idMap := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		idMap[n.id] = NewID()
+	}
+
+	// 6. Write transaction — Exec only, no Query (WAL precaution).
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return TreeNode{}, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var rootNode TreeNode
+	for i, n := range nodes {
+		newID := idMap[n.id]
+		name := n.name
+		var newParentID string
+		var newOrder int
+
+		if i == 0 {
+			newParentID = src.parentID
+			newOrder = nextOrder
+			name = "Copy of " + name
+		} else {
+			newParentID = idMap[n.parentID]
+			newOrder = n.sortOrder
+		}
+
+		if _, err := tx.Exec(`INSERT INTO tree (id, name, parent_id, type, method, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+			newID, name, nullStr(newParentID), n.nodeType, n.method, newOrder); err != nil {
+			return TreeNode{}, fmt.Errorf("insert tree %s: %w", newID, err)
+		}
+
+		if n.nodeType == "request" {
+			d := details[n.id]
+			if _, err := tx.Exec(`
+				INSERT INTO detail (id, url, headers_json, body, pre_script, post_script, description,
+				                    body_type, form_fields, graphql_vars, grpc_method, auth_json, settings_json)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				newID, d.url, d.headers, d.body, d.preScript, d.postScript, d.description,
+				d.bodyType, d.formFields, d.graphqlVars, d.grpcMethod, d.auth, d.settings); err != nil {
+				return TreeNode{}, fmt.Errorf("insert detail %s: %w", newID, err)
+			}
+		}
+
+		det := details[n.id]
+		if err := reindexFTS(tx, newID, name, det.url, det.body); err != nil {
+			return TreeNode{}, fmt.Errorf("reindex %s: %w", newID, err)
+		}
+
+		if i == 0 {
+			rootNode = TreeNode{ID: newID, Name: name, ParentID: newParentID, Type: n.nodeType, Method: n.method, SortOrder: newOrder}
+		}
+	}
+
+	return rootNode, tx.Commit()
+}
+
 // subtreeIDs returns id plus all descendant ids via a recursive CTE, read on a
 // plain (non-transaction) connection so the cursor is closed before any write.
 func (db *DB) subtreeIDs(id string) ([]string, error) {

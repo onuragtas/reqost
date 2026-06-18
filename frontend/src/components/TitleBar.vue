@@ -1,6 +1,6 @@
 <template>
   <div class="titlebar">
-    <span class="app-name">reqost</span>
+    <span class="app-name">ReQost</span>
   </div>
 </template>
 

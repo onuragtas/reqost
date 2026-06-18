@@ -181,6 +181,12 @@ func (s *CollectionService) MoveNode(id, newParentID string, newIndex int) error
 	return s.db.MoveNode(id, newParentID, newIndex)
 }
 
+// DuplicateNode creates a deep copy of a request or folder (including all
+// descendants) as the next sibling of the original.
+func (s *CollectionService) DuplicateNode(id string) (index.TreeNode, error) {
+	return s.db.DuplicateNode(id)
+}
+
 // ListRequestsUnder returns the requests at/below a node in run order. Used by
 // the Collection Runner.
 func (s *CollectionService) ListRequestsUnder(id string) ([]index.TreeNode, error) {

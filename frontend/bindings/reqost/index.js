@@ -21,10 +21,3 @@ export {
     GRPCResult,
     SendResult
 } from "./models.js";
-
-import * as $models from "./models.js";
-
-/**
- * EventEmitter is satisfied by app.Event in Wails v3.
- * @typedef {$models.EventEmitter} EventEmitter
- */
