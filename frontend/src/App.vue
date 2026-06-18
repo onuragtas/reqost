@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import TitleBar from './components/TitleBar.vue'
 import IconRail, { type Mode } from './components/IconRail.vue'
 import Sidebar from './components/Sidebar.vue'
 import TabBar from './components/TabBar.vue'
@@ -26,16 +27,19 @@ onMounted(loadEnvironments)
 
 <template>
   <div class="app">
-    <IconRail @mode="onMode" />
+    <TitleBar />
+    <div class="content">
+      <IconRail @mode="onMode" />
 
-    <Sidebar v-show="mode === 'collections'" class="sidebar" />
-    <HistoryPanel v-if="mode === 'history'" class="sidebar" />
-    <SettingsPanel v-if="mode === 'settings'" class="sidebar" />
+      <Sidebar v-show="mode === 'collections'" class="sidebar" />
+      <HistoryPanel v-if="mode === 'history'" class="sidebar" />
+      <SettingsPanel v-if="mode === 'settings'" class="sidebar" />
 
-    <main class="main">
-      <TabBar />
-      <RequestWorkbench />
-    </main>
+      <main class="main">
+        <TabBar />
+        <RequestWorkbench />
+      </main>
+    </div>
 
     <EnvironmentsModal />
     <RunnerModal />
@@ -44,7 +48,8 @@ onMounted(loadEnvironments)
 </template>
 
 <style scoped>
-.app { display: flex; height: 100%; overflow: hidden; }
+.app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.content { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 .sidebar { width: 280px; flex-shrink: 0; }
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 </style>
