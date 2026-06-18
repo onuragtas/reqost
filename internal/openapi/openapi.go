@@ -98,6 +98,11 @@ func Parse(path string) ([]collection.FlatItem, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read spec: %w", err)
 	}
+	return ParseBytes(data)
+}
+
+// ParseBytes parses an OpenAPI 3 / Swagger 2 spec from raw bytes (JSON or YAML).
+func ParseBytes(data []byte) ([]collection.FlatItem, string, error) {
 	var s spec
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, "", fmt.Errorf("parse spec: %w", err)

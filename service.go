@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -254,6 +258,89 @@ func (s *CollectionService) reimport(path string) {
 
 	log.Printf("indexed %d items from %s", len(items), path)
 	s.emit("collection:ready", path)
+}
+
+// ImportFromURL fetches a URL and imports it as a Postman collection or
+// OpenAPI/Swagger spec. It auto-detects the format from the content.
+// The import is asynchronous; it emits the usual collection:* events.
+// Supported URL types:
+//   - Any direct JSON/YAML URL (GitHub raw, gist, etc.)
+//   - Postman public share links (getpostman.com/collections/…)
+//   - Postman API URLs with ?access_key=… or X-Api-Key header
+func (s *CollectionService) ImportFromURL(rawURL string) error {
+	if rawURL == "" {
+		return fmt.Errorf("URL is empty")
+	}
+	// Normalise: Postman share links redirect; follow them.
+	go func() {
+		s.emit("collection:importing", rawURL)
+
+		client := &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) > 10 {
+					return fmt.Errorf("too many redirects")
+				}
+				return nil
+			},
+		}
+
+		req, err := http.NewRequest("GET", rawURL, nil)
+		if err != nil {
+			s.emit("collection:error", fmt.Sprintf("invalid URL: %v", err))
+			return
+		}
+		req.Header.Set("Accept", "application/json, application/yaml, text/yaml, */*")
+		req.Header.Set("User-Agent", "reqost/1.0")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			s.emit("collection:error", fmt.Sprintf("fetch failed: %v", err))
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			s.emit("collection:error", fmt.Sprintf("HTTP %d from %s", resp.StatusCode, rawURL))
+			return
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 50<<20)) // 50 MiB cap
+		if err != nil {
+			s.emit("collection:error", fmt.Sprintf("read response: %v", err))
+			return
+		}
+
+		ct := resp.Header.Get("Content-Type")
+		isYAML := strings.Contains(ct, "yaml") || strings.HasSuffix(strings.ToLower(rawURL), ".yaml") || strings.HasSuffix(strings.ToLower(rawURL), ".yml")
+
+		// Try Postman collection first (JSON only).
+		if !isYAML {
+			if items, err := collection.ParseBytes(body); err == nil && len(items) > 0 {
+				if err := s.db.ImportItems(rawURL, 0, items); err != nil {
+					s.emit("collection:error", fmt.Sprintf("index collection: %v", err))
+					return
+				}
+				log.Printf("imported %d items from URL %s", len(items), rawURL)
+				s.emit("collection:ready", rawURL)
+				return
+			}
+		}
+
+		// Fall back to OpenAPI / Swagger (JSON or YAML).
+		items, _, err := openapi.ParseBytes(body)
+		if err != nil {
+			s.emit("collection:error", fmt.Sprintf("unrecognised format: %v", err))
+			return
+		}
+		if err := s.db.AddItems(items); err != nil {
+			s.emit("collection:error", fmt.Sprintf("index openapi: %v", err))
+			return
+		}
+		log.Printf("imported OpenAPI %d items from URL %s", len(items), rawURL)
+		s.emit("collection:ready", rawURL)
+	}()
+	return nil
 }
 
 func (s *CollectionService) emit(event string, data ...any) {
