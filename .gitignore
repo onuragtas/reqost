@@ -1,0 +1,42 @@
+# Build output
+.task
+bin
+dist
+frontend/dist
+frontend/node_modules
+
+# Wails template platform-specific build artifacts
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+# Mobile generated (per-machine; overlays hold absolute paths)
+build/ios/xcode/overlay.json
+build/ios/xcode/gen/
+build/android/overlay.json
+build/android/gen/
+
+# Auto-update staging
+*.old
+*.new
+
+# Go
+*.test
+*.out
+coverage.*
+vendor/
+
+# Logs / temp
+*.log
+*.tmp
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

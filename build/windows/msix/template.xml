@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MsixPackagingToolTemplate
+    xmlns="http://schemas.microsoft.com/msix/packaging/msixpackagingtool/template/2022">
+    <Settings
+        AllowTelemetry="false"
+        ApplyACLsToPackageFiles="true"
+        GenerateCommandLineFile="true"
+        AllowPromptForPassword="false">
+    </Settings>
+    <Installer
+        Path="reqost"
+        Arguments=""
+        InstallLocation="C:\Program Files\ReSoft\My Product">
+    </Installer>
+    <PackageInformation
+        PackageName="My Product"
+        PackageDisplayName="My Product"
+        PublisherName="CN=ReSoft"
+        PublisherDisplayName="ReSoft"
+        Version="0.1.0.0"
+        PackageDescription="A reqost application">
+        <Capabilities>
+            <Capability Name="runFullTrust" />
+            
+        </Capabilities>
+        <Applications>
+            <Application
+                Id="org.resoft.reqost"
+                Description="A reqost application"
+                DisplayName="My Product"
+                ExecutableName="reqost"
+                EntryPoint="Windows.FullTrustApplication">
+                
+            </Application>
+        </Applications>
+        <Resources>
+            <Resource Language="en-us" />
+        </Resources>
+        <Dependencies>
+            <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+        </Dependencies>
+        <Properties>
+            <Framework>false</Framework>
+            <DisplayName>My Product</DisplayName>
+            <PublisherDisplayName>ReSoft</PublisherDisplayName>
+            <Description>A reqost application</Description>
+            <Logo>Assets\AppIcon.png</Logo>
+        </Properties>
+    </PackageInformation>
+    <SaveLocation PackagePath="reqost.msix" />
+    <PackageIntegrity>
+        <CertificatePath></CertificatePath>
+    </PackageIntegrity>
+</MsixPackagingToolTemplate>

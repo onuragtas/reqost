@@ -1,0 +1,101 @@
+version: '3'
+
+vars:
+  APP_NAME: "reqost"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # The wails3 CLI is not installed on every dev box; this lets us invoke it
+  # via `go run` pinned to the module version. See README for details.
+  WAILS_CLI: 'go run github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.103'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+  ios: ./build/ios/Taskfile.yml
+  android: ./build/android/Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application
+    cmds:
+      - task: "{{OS}}:build"
+
+  package:
+    summary: Packages a production build of the application
+    cmds:
+      - task: "{{OS}}:package"
+
+  run:
+    summary: Runs the application
+    cmds:
+      - task: "{{OS}}:run"
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - "{{.WAILS_CLI}} dev -config ./build/config.yml -port {{.VITE_PORT}}"
+
+  bindings:
+    summary: Regenerate the TS bindings under frontend/bindings (re-run after any service-method signature change)
+    cmds:
+      - "{{.WAILS_CLI}} generate bindings -clean=true"
+
+  fix:lightningcss:
+    summary: "Symlink the lightningcss native binding npm fails to resolve (one-off fix for `npm run build`)"
+    dir: frontend
+    cmds:
+      - |
+        set -e
+        ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+        case "$ARCH" in
+          darwin-arm64)  PKG=lightningcss-darwin-arm64 ; LIB=lightningcss.darwin-arm64.node ;;
+          darwin-x86_64) PKG=lightningcss-darwin-x64   ; LIB=lightningcss.darwin-x64.node   ;;
+          linux-x86_64)  PKG=lightningcss-linux-x64-gnu; LIB=lightningcss.linux-x64-gnu.node;;
+          linux-aarch64) PKG=lightningcss-linux-arm64-gnu; LIB=lightningcss.linux-arm64-gnu.node ;;
+          *) echo "unknown arch: $ARCH — symlink manually" >&2; exit 1 ;;
+        esac
+        SRC="../$PKG/$LIB"
+        DST="node_modules/lightningcss/$LIB"
+        if [ -L "$DST" ] || [ -f "$DST" ]; then
+          echo "$DST already present"; exit 0
+        fi
+        if [ ! -f "node_modules/lightningcss/$SRC" ] && [ ! -f "node_modules/$PKG/$LIB" ]; then
+          echo "native pkg $PKG missing — run npm install first" >&2; exit 1
+        fi
+        ln -sf "$SRC" "$DST"
+        echo "linked $DST → $SRC"
+
+  frontend:build:
+    summary: Production frontend build (auto-fixes the lightningcss missing-binding issue)
+    dir: frontend
+    cmds:
+      - task: fix:lightningcss
+      - "{{.PACKAGE_MANAGER}} run build"
+
+  setup:docker:
+    summary: Builds Docker image for cross-compilation (~800MB download)
+    cmds:
+      - task: common:setup:docker
+
+  build:server:
+    summary: Builds the application in server mode (no GUI, HTTP server only)
+    cmds:
+      - task: common:build:server
+
+  run:server:
+    summary: Runs the application in server mode
+    cmds:
+      - task: common:run:server
+
+  build:docker:
+    summary: Builds a Docker image for server mode deployment
+    cmds:
+      - task: common:build:docker
+
+  run:docker:
+    summary: Builds and runs the Docker image
+    cmds:
+      - task: common:run:docker
