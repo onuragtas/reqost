@@ -26,17 +26,18 @@ type FlatItem struct {
 	AuthJSON    string // JSON object matching the frontend Auth shape
 }
 
-func ParseFile(path string) ([]FlatItem, error) {
+func ParseFile(path string) ([]FlatItem, []CollectionVar, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read collection: %w", err)
+		return nil, nil, fmt.Errorf("read collection: %w", err)
 	}
 	return ParseBytes(data)
 }
 
 // ParseBytes parses a Postman Collection v2.1 JSON from raw bytes.
 // It also handles the Postman API envelope: {"collection": {...}}.
-func ParseBytes(data []byte) ([]FlatItem, error) {
+// Returns the flat item list and any root-level collection variables.
+func ParseBytes(data []byte) ([]FlatItem, []CollectionVar, error) {
 	// Postman API wraps the collection: {"collection": { "info":…, "item":… }}
 	var envelope struct {
 		Collection *Collection `json:"collection"`
@@ -47,23 +48,59 @@ func ParseBytes(data []byte) ([]FlatItem, error) {
 		for i, item := range col.Item {
 			flatten(&items, item, "", i)
 		}
-		return items, nil
+		return items, normaliseVars(col.Variable), nil
 	}
 
 	var col Collection
 	if err := json.Unmarshal(data, &col); err != nil {
-		return nil, fmt.Errorf("parse collection json: %w", err)
+		return nil, nil, fmt.Errorf("parse collection json: %w", err)
 	}
 	// Require at least an info block or items so we don't misidentify OpenAPI as a collection.
 	if col.Info.Name == "" && len(col.Item) == 0 {
-		return nil, fmt.Errorf("not a Postman collection")
+		return nil, nil, fmt.Errorf("not a Postman collection")
 	}
 
 	var items []FlatItem
 	for i, item := range col.Item {
 		flatten(&items, item, "", i)
 	}
-	return items, nil
+	return items, normaliseVars(col.Variable), nil
+}
+
+// ParseEnvBytes parses a Postman environment export JSON.
+// Returns the environment name and its variables, or an error if the bytes
+// don't look like a Postman environment file.
+func ParseEnvBytes(data []byte) (name string, vars []CollectionVar, err error) {
+	var env struct {
+		Name   string          `json:"name"`
+		Values []CollectionVar `json:"values"`
+		Scope  string          `json:"_postman_variable_scope"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		return "", nil, fmt.Errorf("parse env json: %w", err)
+	}
+	if env.Scope != "environment" && env.Scope != "globals" && env.Name == "" {
+		return "", nil, fmt.Errorf("not a Postman environment file")
+	}
+	name = env.Name
+	if name == "" {
+		name = "Imported environment"
+	}
+	return name, normaliseVars(env.Values), nil
+}
+
+// normaliseVars converts Postman variable entries: if `enabled` is unset but
+// `type` is not "secret", treat the variable as enabled.
+func normaliseVars(in []CollectionVar) []CollectionVar {
+	out := make([]CollectionVar, 0, len(in))
+	for _, v := range in {
+		if v.Key == "" {
+			continue
+		}
+		enabled := v.Enabled || v.Type == "default" || (v.Type == "" && !v.Enabled)
+		out = append(out, CollectionVar{Key: v.Key, Value: v.Value, Enabled: enabled})
+	}
+	return out
 }
 
 func flatten(out *[]FlatItem, item Item, parentID string, order int) {

@@ -6,6 +6,7 @@ import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
   GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL,
 } from '../../bindings/reqost/collectionservice'
+import { PickImportEnv } from '../../bindings/reqost/envservice'
 import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
 import { useRunner } from '../composables/useRunner'
@@ -134,6 +135,7 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'New gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
       { label: 'Run Collection', run: () => runColl('') },
       { label: 'Import Collection…', run: onImport },
+      { label: 'Import Environment…', run: onImportEnv },
       { label: 'Import OpenAPI…', run: onImportOpenAPI },
       { label: 'Import from URL…', run: onImportFromURL },
       { label: 'Export Collection…', run: onExport },
@@ -263,6 +265,18 @@ async function onImportFromURL() {
     await ImportFromURL(url.trim())
   } catch (e) {
     flashError('Import failed', e)
+  }
+}
+
+async function onImportEnv() {
+  try {
+    const name = await PickImportEnv()
+    if (name) {
+      statusMsg.value = `Environment "${name}" imported`
+      setTimeout(() => { if (statusMsg.value.startsWith('Environment')) statusMsg.value = '' }, 2500)
+    }
+  } catch (e) {
+    flashError('Env import failed', e)
   }
 }
 

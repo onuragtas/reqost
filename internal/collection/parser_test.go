@@ -30,7 +30,7 @@ func TestParseBodyModesAndAuth(t *testing.T) {
 	      "auth": {"type": "basic", "basic": [{"key": "username", "value": "u"}, {"key": "password", "value": "p"}]}}}
 	  ]
 	}`
-	items, err := ParseFile(writeTemp(t, col))
+	items, _, err := ParseFile(writeTemp(t, col))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

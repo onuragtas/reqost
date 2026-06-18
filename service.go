@@ -27,6 +27,7 @@ type CollectionService struct {
 	watch   *watcher.Watcher
 	emitter EventEmitter
 	dialog  *application.DialogManager
+	envSvc  *EnvService
 }
 
 func NewCollectionService() (*CollectionService, error) {
@@ -53,6 +54,10 @@ func (s *CollectionService) setEmitter(e EventEmitter) {
 
 func (s *CollectionService) setDialog(d *application.DialogManager) {
 	s.dialog = d
+}
+
+func (s *CollectionService) setEnvSvc(e *EnvService) {
+	s.envSvc = e
 }
 
 // PickImport opens a native open-file dialog and imports the chosen collection.
@@ -241,7 +246,7 @@ func (s *CollectionService) reimport(path string) {
 	s.emit("collection:importing", path)
 	log.Printf("importing %s ...", path)
 
-	items, err := collection.ParseFile(path)
+	items, vars, err := collection.ParseFile(path)
 	if err != nil {
 		s.emit("collection:error", err.Error())
 		return
@@ -250,6 +255,10 @@ func (s *CollectionService) reimport(path string) {
 	if err := s.db.ImportItems(path, currentMtime, items); err != nil {
 		s.emit("collection:error", fmt.Sprintf("index: %v", err))
 		return
+	}
+
+	if len(vars) > 0 && s.envSvc != nil {
+		s.envSvc.mergeCollectionVars(path, vars)
 	}
 
 	// The SQLite index is the source of truth (edits are written to it, not the
@@ -314,12 +323,27 @@ func (s *CollectionService) ImportFromURL(rawURL string) error {
 		ct := resp.Header.Get("Content-Type")
 		isYAML := strings.Contains(ct, "yaml") || strings.HasSuffix(strings.ToLower(rawURL), ".yaml") || strings.HasSuffix(strings.ToLower(rawURL), ".yml")
 
-		// Try Postman collection first (JSON only).
+		// Try Postman environment file (JSON only, no items).
 		if !isYAML {
-			if items, err := collection.ParseBytes(body); err == nil && len(items) > 0 {
+			if name, vars, err := collection.ParseEnvBytes(body); err == nil && len(vars) > 0 {
+				if s.envSvc != nil {
+					s.envSvc.mergeCollectionVars(name, vars)
+				}
+				log.Printf("imported env %q (%d vars) from URL %s", name, len(vars), rawURL)
+				s.emit("collection:ready", rawURL)
+				return
+			}
+		}
+
+		// Try Postman collection (JSON only).
+		if !isYAML {
+			if items, vars, err := collection.ParseBytes(body); err == nil && len(items) > 0 {
 				if err := s.db.ImportItems(rawURL, 0, items); err != nil {
 					s.emit("collection:error", fmt.Sprintf("index collection: %v", err))
 					return
+				}
+				if len(vars) > 0 && s.envSvc != nil {
+					s.envSvc.mergeCollectionVars(rawURL, vars)
 				}
 				log.Printf("imported %d items from URL %s", len(items), rawURL)
 				s.emit("collection:ready", rawURL)

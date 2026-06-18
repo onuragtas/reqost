@@ -4,9 +4,20 @@ import "encoding/json"
 
 // Postman Collection Format v2.1
 
+// CollectionVar is a single entry from a Postman collection's root `variable`
+// array or a Postman environment export's `values` array.
+type CollectionVar struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Enabled bool   `json:"enabled"`
+	// Postman env exports use "type" (default|secret) instead of a bool.
+	Type string `json:"type,omitempty"`
+}
+
 type Collection struct {
-	Info CollectionInfo `json:"info"`
-	Item []Item         `json:"item"`
+	Info     CollectionInfo  `json:"info"`
+	Item     []Item          `json:"item"`
+	Variable []CollectionVar `json:"variable,omitempty"`
 }
 
 type CollectionInfo struct {

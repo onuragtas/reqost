@@ -6,6 +6,9 @@
  * UpdateService exposes the self-update flow to the frontend. Two-step on
  * purpose: Check returns metadata so the UI can show release notes + a confirm
  * button before Apply touches the binary.
+ * 
+ * The download URLs are kept server-side (cached in lastInfo) so they never
+ * need to round-trip through the frontend — Apply() uses the cached result.
  * @module
  */
 
@@ -18,18 +21,18 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as update$0 from "./internal/update/models.js";
 
 /**
- * ApplyUpdate downloads and installs the update described by info. On success
- * the running binary has been replaced; the caller should prompt for restart.
- * @param {update$0.Info} info
+ * ApplyUpdate downloads and installs the cached update. On success the running
+ * binary has been replaced; the caller should prompt for restart.
  * @returns {$CancellablePromise<void>}
  */
-export function ApplyUpdate(info) {
-    return $Call.ByID(3973249877, info);
+export function ApplyUpdate() {
+    return $Call.ByID(3973249877);
 }
 
 /**
  * CheckForUpdate queries the latest GitHub release and reports whether a newer
- * version is available for this platform.
+ * version is available for this platform. The result is cached so ApplyUpdate
+ * can use the original Info (including internal download URLs).
  * @returns {$CancellablePromise<update$0.Info | null>}
  */
 export function CheckForUpdate() {

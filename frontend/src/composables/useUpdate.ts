@@ -1,5 +1,6 @@
 import { ref, readonly } from 'vue'
 import { CurrentVersion, CheckForUpdate, ApplyUpdate } from '../../bindings/reqost/updateservice'
+// ApplyUpdate no longer takes an argument — the backend caches the Info from CheckForUpdate.
 
 const version   = ref<string>('…')
 const updateInfo = ref<any>(null)   // non-null when a newer release is available
@@ -23,7 +24,7 @@ async function install() {
   applying.value = true
   checkError.value = ''
   try {
-    await ApplyUpdate(updateInfo.value)
+    await ApplyUpdate()
     applied.value = true
     updateInfo.value = null
   } catch (e: any) {
