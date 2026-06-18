@@ -80,6 +80,55 @@ export class Auth {
 }
 
 /**
+ * ClientCert is a host-pattern → certificate mapping. HostPattern matches via
+ * case-insensitive suffix (so "*.example.com" handled as ".example.com" suffix
+ * match — full glob support is overkill for this UI). The first matching cert
+ * is presented during the TLS handshake.
+ */
+export class ClientCert {
+    /**
+     * Creates a new ClientCert instance.
+     * @param {Partial<ClientCert>} [$$source = {}] - The source object to create the ClientCert.
+     */
+    constructor($$source = {}) {
+        if (!("hostPattern" in $$source)) {
+            /**
+             * e.g. "api.example.com", "*.corp.local", or ".internal"
+             * @member
+             * @type {string}
+             */
+            this["hostPattern"] = "";
+        }
+        if (!("certPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["certPath"] = "";
+        }
+        if (!("keyPath" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["keyPath"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ClientCert instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ClientCert}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ClientCert(/** @type {Partial<ClientCert>} */($$parsedSource));
+    }
+}
+
+/**
  * Cookie is a flattened view of a stored cookie for the UI.
  */
 export class Cookie {
@@ -345,6 +394,22 @@ export class Request {
              */
             this["insecureSkipVerify"] = false;
         }
+        if (!("proxyURL" in $$source)) {
+            /**
+             * empty = system proxy from env
+             * @member
+             * @type {string}
+             */
+            this["proxyURL"] = "";
+        }
+        if (!("clientCerts" in $$source)) {
+            /**
+             * mTLS: cert+key matched against URL host
+             * @member
+             * @type {ClientCert[]}
+             */
+            this["clientCerts"] = [];
+        }
 
         Object.assign(this, $$source);
     }
@@ -359,6 +424,7 @@ export class Request {
         const $$createField6_0 = $$createType3;
         const $$createField7_0 = $$createType5;
         const $$createField8_0 = $$createType6;
+        const $$createField14_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField3_0($$parsedSource["headers"]);
@@ -371,6 +437,9 @@ export class Request {
         }
         if ("variables" in $$parsedSource) {
             $$parsedSource["variables"] = $$createField8_0($$parsedSource["variables"]);
+        }
+        if ("clientCerts" in $$parsedSource) {
+            $$parsedSource["clientCerts"] = $$createField14_0($$parsedSource["clientCerts"]);
         }
         return new Request(/** @type {Partial<Request>} */($$parsedSource));
     }
@@ -438,7 +507,7 @@ export class Response {
      */
     static createFrom($$source = {}) {
         const $$createField2_0 = $$createType1;
-        const $$createField5_0 = $$createType7;
+        const $$createField5_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("headers" in $$parsedSource) {
             $$parsedSource["headers"] = $$createField2_0($$parsedSource["headers"]);
@@ -519,4 +588,6 @@ const $$createType3 = $Create.Array($$createType2);
 const $$createType4 = Auth.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
 const $$createType6 = $Create.Map($Create.Any, $Create.Any);
-const $$createType7 = Timing.createFrom;
+const $$createType7 = ClientCert.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = Timing.createFrom;

@@ -11,9 +11,13 @@ import { useDialog } from '../composables/useDialog'
 import { parseQuery, buildUrl, baseOf } from '../composables/url'
 import { parseCurl, toCurl } from '../composables/curl'
 import { recordReqHistory, loadReqHistory, type ReqHistoryEntry } from '../composables/useRequestHistory'
-import { generatePython, generateJS, generateGo, type CodeLang } from '../composables/useCodeGen'
+import {
+  generatePython, generateJS, generateGo, generateJava, generateCSharp, generatePowerShell, generateHTTP,
+  CODE_LANGS, type CodeLang,
+} from '../composables/useCodeGen'
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
+import JsonTree from './JsonTree.vue'
 import { useVarHint } from '../composables/useVarHint'
 
 const { active, closeTab } = useTabs()
@@ -159,10 +163,16 @@ const generatedCode = computed(() => {
   const t = active.value
   if (!t) return ''
   const input = { method: t.method, url: t.url, headers: t.headers, body: t.body, bodyType: t.bodyType, auth: t.auth }
-  if (codeLang.value === 'curl') return toCurl(t.method, t.url, t.headers, t.body)
-  if (codeLang.value === 'python') return generatePython(input)
-  if (codeLang.value === 'javascript') return generateJS(input)
-  if (codeLang.value === 'go') return generateGo(input)
+  switch (codeLang.value) {
+    case 'curl':       return toCurl(t.method, t.url, t.headers, t.body)
+    case 'python':     return generatePython(input)
+    case 'javascript': return generateJS(input)
+    case 'go':         return generateGo(input)
+    case 'java':       return generateJava(input)
+    case 'csharp':     return generateCSharp(input)
+    case 'powershell': return generatePowerShell(input)
+    case 'http':       return generateHTTP(input)
+  }
   return ''
 })
 async function copyCode() {
@@ -191,6 +201,43 @@ function removeParam(i: number) { active.value?.params.splice(i, 1); syncUrl() }
 
 function addHeader() { active.value?.headers.push({ key: '', value: '', enabled: true }) }
 function removeHeader(i: number) { active.value?.headers.splice(i, 1) }
+
+// ── Bulk headers edit (Postman-style) ─────────────────────────────────────
+const bulkHeaders = ref(false)
+const bulkHeadersText = ref('')
+
+function headersToBulk(): string {
+  return (active.value?.headers ?? [])
+    .filter(h => h.key.trim())
+    .map(h => `${h.enabled ? '' : '#'}${h.key}: ${h.value}`)
+    .join('\n')
+}
+function bulkToHeaders(text: string): { key: string; value: string; enabled: boolean }[] {
+  const out: { key: string; value: string; enabled: boolean }[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd()
+    if (!line.trim()) continue
+    let enabled = true
+    let s = line
+    if (s.startsWith('#')) { enabled = false; s = s.slice(1) }
+    const colon = s.indexOf(':')
+    if (colon < 1) continue
+    out.push({ key: s.slice(0, colon).trim(), value: s.slice(colon + 1).trim(), enabled })
+  }
+  return out
+}
+function setBulkHeaders(on: boolean) {
+  if (on && !bulkHeaders.value) {
+    bulkHeadersText.value = headersToBulk()
+  } else if (!on && bulkHeaders.value) {
+    commitBulkHeaders()
+  }
+  bulkHeaders.value = on
+}
+function commitBulkHeaders() {
+  if (!active.value) return
+  active.value.headers = bulkToHeaders(bulkHeadersText.value)
+}
 
 async function send() {
   const t = active.value
@@ -230,6 +277,8 @@ async function send() {
       disableRedirect: !followRedirects,
       maxRedirects,
       insecureSkipVerify: !verifySSL,
+      proxyURL: appSettings.proxyURL,
+      clientCerts: appSettings.clientCerts.filter(c => c.hostPattern && c.certPath && c.keyPath),
     }, t.preScript, t.postScript)
 
     const resp = res?.response
@@ -286,12 +335,65 @@ const prettyBody = computed(() => {
   try { return JSON.stringify(JSON.parse(b), null, 2) } catch { return b }
 })
 
+// ── Response body view mode (Pretty / Raw / Tree) ──────────────────────────
+type BodyView = 'pretty' | 'raw' | 'tree'
+const bodyView = ref<BodyView>('pretty')
+const bodyJSON = computed(() => {
+  const b = active.value?.response?.body ?? ''
+  try { return JSON.parse(b) } catch { return null }
+})
+const canTree = computed(() => bodyJSON.value !== null)
+
 function fmtSize(n: number) {
   if (n < 1024) return `${n} B`
   if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / 1048576).toFixed(2)} MB`
 }
 function fmtMs(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms` }
+
+// ── Timing waterfall (DNS / Connect / TLS / TTFB / Download) ──────────────
+interface Timing {
+  dnsMs: number; connectMs: number; tlsMs: number; ttfbMs: number; totalMs: number
+}
+interface WaterSegment { label: string; ms: number; x: number; w: number; color: string }
+
+function waterfallSegments(t: Timing): WaterSegment[] {
+  if (!t || !t.totalMs) return []
+  // TTFB already includes DNS + Connect + TLS in httpclient's accounting (it
+  // is measured from start → first byte). So "wait" = ttfb - dns - connect - tls.
+  const dns = Math.max(0, t.dnsMs)
+  const conn = Math.max(0, t.connectMs)
+  const tls = Math.max(0, t.tlsMs)
+  const wait = Math.max(0, t.ttfbMs - dns - conn - tls)
+  const dl = Math.max(0, t.totalMs - t.ttfbMs)
+  const total = dns + conn + tls + wait + dl || t.totalMs
+  const segs: { label: string; ms: number; color: string }[] = [
+    { label: 'DNS',      ms: dns,  color: '#61affe' },
+    { label: 'Connect',  ms: conn, color: '#49cc90' },
+    { label: 'TLS',      ms: tls,  color: '#fca130' },
+    { label: 'Wait',     ms: wait, color: '#50e3c2' },
+    { label: 'Download', ms: dl,   color: '#a78bfa' },
+  ]
+  let x = 0
+  const out: WaterSegment[] = []
+  for (const s of segs) {
+    const w = (s.ms / total) * 100
+    if (w <= 0) continue
+    out.push({ ...s, x, w })
+    x += w
+  }
+  return out
+}
+
+function timingTooltip(t: Timing): string {
+  return [
+    `DNS:      ${fmtMs(t.dnsMs)}`,
+    `Connect:  ${fmtMs(t.connectMs)}`,
+    `TLS:      ${fmtMs(t.tlsMs)}`,
+    `TTFB:     ${fmtMs(t.ttfbMs)}`,
+    `Total:    ${fmtMs(t.totalMs)}`,
+  ].join('\n')
+}
 
 // Tri-state binding helpers for the Settings subtab: undefined ⇒ 'inherit'.
 function boolToTri(v: boolean | undefined): 'inherit' | 'true' | 'false' {
@@ -353,10 +455,7 @@ function onSetVerifySSL(s: string) {
       <div v-if="showCode" class="code-panel">
         <div class="code-header">
           <select v-model="codeLang" class="lang-select">
-            <option value="curl">cURL</option>
-            <option value="python">Python</option>
-            <option value="javascript">JavaScript</option>
-            <option value="go">Go</option>
+            <option v-for="l in CODE_LANGS" :key="l.id" :value="l.id">{{ l.label }}</option>
           </select>
           <button class="copy-code" @click="copyCode">Copy</button>
           <button class="code-close" @click="showCode = false">✕</button>
@@ -416,13 +515,36 @@ function onSetVerifySSL(s: string) {
 
             <!-- Headers -->
             <div v-else-if="active.reqSubTab === 'headers'" class="kv">
-              <div v-for="(h, i) in active.headers" :key="i" class="kv-row">
-                <input type="checkbox" v-model="h.enabled" />
-                <input v-model="h.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, h.key)" @mouseleave="hideVarHint" />
-                <input v-model="h.value" placeholder="Value" class="kv-val" @mouseenter="showVarHint($event, h.value)" @mouseleave="hideVarHint" />
-                <button class="kv-del" @click="removeHeader(i)">✕</button>
+              <div class="kv-bar">
+                <button
+                  class="kv-mode" :class="{ active: !bulkHeaders }"
+                  @click="setBulkHeaders(false)"
+                >Key-Value</button>
+                <button
+                  class="kv-mode" :class="{ active: bulkHeaders }"
+                  @click="setBulkHeaders(true)"
+                >Bulk Edit</button>
               </div>
-              <button class="add" @click="addHeader">+ Add header</button>
+
+              <template v-if="!bulkHeaders">
+                <div v-for="(h, i) in active.headers" :key="i" class="kv-row">
+                  <input type="checkbox" v-model="h.enabled" />
+                  <input v-model="h.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, h.key)" @mouseleave="hideVarHint" />
+                  <input v-model="h.value" placeholder="Value" class="kv-val" @mouseenter="showVarHint($event, h.value)" @mouseleave="hideVarHint" />
+                  <button class="kv-del" @click="removeHeader(i)">✕</button>
+                </div>
+                <button class="add" @click="addHeader">+ Add header</button>
+              </template>
+
+              <textarea
+                v-else
+                v-model="bulkHeadersText"
+                class="body-area"
+                placeholder="Authorization: Bearer abc&#10;Content-Type: application/json&#10;X-Disabled: paste; lines starting with # are disabled"
+                spellcheck="false"
+                @blur="commitBulkHeaders"
+              />
+              <p v-if="bulkHeaders" class="hint">One header per line: <code>Key: Value</code>. Leading <code>#</code> disables the row. Click Key-Value to apply.</p>
             </div>
 
             <!-- Body -->
@@ -531,7 +653,17 @@ function onSetVerifySSL(s: string) {
                 <span class="dot" :style="{ background: statusColor }"></span>
                 {{ active.response.status }} {{ active.response.statusText }}
               </span>
-              <span class="meta">{{ fmtMs(active.response.timing.totalMs) }}</span>
+              <span class="meta timing-meta" :title="timingTooltip(active.response.timing)">
+                {{ fmtMs(active.response.timing.totalMs) }}
+                <svg class="waterfall" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+                  <rect
+                    v-for="seg in waterfallSegments(active.response.timing)"
+                    :key="seg.label"
+                    :x="seg.x" :y="0" :width="seg.w" :height="8"
+                    :fill="seg.color"
+                  />
+                </svg>
+              </span>
               <span class="meta">{{ fmtSize(active.response.sizeBytes) }}</span>
               <div class="res-subtabs">
                 <button
@@ -547,7 +679,27 @@ function onSetVerifySSL(s: string) {
               </div>
             </div>
 
-            <pre v-if="active.resSubTab === 'body'" class="res-body selectable">{{ prettyBody }}</pre>
+            <template v-if="active.resSubTab === 'body'">
+              <div class="body-view-bar">
+                <button
+                  class="bv-btn" :class="{ active: bodyView === 'pretty' }"
+                  @click="bodyView = 'pretty'"
+                >Pretty</button>
+                <button
+                  class="bv-btn" :class="{ active: bodyView === 'raw' }"
+                  @click="bodyView = 'raw'"
+                >Raw</button>
+                <button
+                  class="bv-btn" :class="{ active: bodyView === 'tree' }"
+                  :disabled="!canTree"
+                  :title="!canTree ? 'Tree view requires a JSON body' : ''"
+                  @click="bodyView = 'tree'"
+                >Tree</button>
+              </div>
+              <JsonTree v-if="bodyView === 'tree' && canTree" :value="bodyJSON" />
+              <pre v-else-if="bodyView === 'pretty'" class="res-body selectable">{{ prettyBody }}</pre>
+              <pre v-else class="res-body selectable">{{ active.response.body }}</pre>
+            </template>
             <div v-else-if="active.resSubTab === 'headers'" class="res-headers selectable">
               <div v-for="(h, i) in active.response.headers" :key="i" class="rh">
                 <span class="rh-k">{{ h.key }}</span><span class="rh-v">{{ h.value }}</span>
@@ -684,6 +836,10 @@ function onSetVerifySSL(s: string) {
 
 .subpanel { padding: 12px 16px; overflow-y: auto; flex: 1; }
 .kv { display: flex; flex-direction: column; gap: 6px; }
+.kv-bar { display: flex; gap: 2px; margin-bottom: 2px; }
+.kv-mode { font-size: 10px; padding: 3px 8px; color: var(--text-faint); border-radius: 4px; }
+.kv-mode:hover { color: var(--text-dim); }
+.kv-mode.active { color: var(--text); background: var(--bg-input); }
 .kv-row { display: flex; align-items: center; gap: 6px; }
 .kv-key, .kv-val { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font: 12px monospace; padding: 5px 8px; }
 .kv-key { width: 34%; } .kv-val { flex: 1; }
@@ -704,11 +860,18 @@ function onSetVerifySSL(s: string) {
 .soon { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 80px; color: var(--text-faint); font-size: 12px; }
 
 .res-bar { display: flex; align-items: center; gap: 14px; padding: 9px 16px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.timing-meta { display: flex; align-items: center; gap: 6px; cursor: help; }
+.waterfall { width: 60px; height: 8px; border-radius: 2px; overflow: hidden; background: var(--bg-input); }
 .status { display: flex; align-items: center; gap: 7px; font: 700 13px monospace; }
 .dot { width: 7px; height: 7px; border-radius: 50%; }
 .meta { color: var(--text-dim); font-size: 12px; }
 .res-subtabs { margin-left: auto; }
 .res-body { flex: 1; overflow: auto; padding: 12px 16px; color: var(--text); font: 12px/1.5 monospace; white-space: pre-wrap; word-break: break-word; }
+.body-view-bar { display: flex; gap: 4px; padding: 4px 16px; background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.bv-btn { font-size: 10px; padding: 3px 8px; color: var(--text-faint); border-radius: 3px; }
+.bv-btn:hover:not(:disabled) { color: var(--text-dim); }
+.bv-btn.active { color: var(--text); background: var(--bg-input); }
+.bv-btn:disabled { opacity: 0.4; cursor: default; }
 .res-headers { flex: 1; overflow: auto; padding: 8px 16px; }
 .rh { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); font: 12px monospace; }
 .rh-k { color: #61affe; min-width: 220px; word-break: break-all; }

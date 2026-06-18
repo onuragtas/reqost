@@ -48,7 +48,19 @@ type Request struct {
 	TimeoutMs          int               `json:"timeoutMs"`          // 0 = no timeout
 	DisableRedirect    bool              `json:"disableRedirect"`    // false = follow redirects
 	MaxRedirects       int               `json:"maxRedirects"`       // 0 = stdlib default (10)
-	InsecureSkipVerify bool               `json:"insecureSkipVerify"` // false = verify TLS
+	InsecureSkipVerify bool              `json:"insecureSkipVerify"` // false = verify TLS
+	ProxyURL           string            `json:"proxyURL"`           // empty = system proxy from env
+	ClientCerts        []ClientCert      `json:"clientCerts"`        // mTLS: cert+key matched against URL host
+}
+
+// ClientCert is a host-pattern → certificate mapping. HostPattern matches via
+// case-insensitive suffix (so "*.example.com" handled as ".example.com" suffix
+// match — full glob support is overkill for this UI). The first matching cert
+// is presented during the TLS handshake.
+type ClientCert struct {
+	HostPattern string `json:"hostPattern"` // e.g. "api.example.com", "*.corp.local", or ".internal"
+	CertPath    string `json:"certPath"`
+	KeyPath     string `json:"keyPath"`
 }
 
 // Timing is the per-phase breakdown captured via net/http/httptrace, in

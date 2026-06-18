@@ -42,8 +42,55 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 
 ## D — Tech debt / infra
 - [x] Module still named `changeme` (rename → regenerate bindings) — zaten `reqost`
-- [ ] No CI; no frontend tests (Go tests only)
+- [ ] No CI; no frontend tests (Go tests only) — Go tarafına `go test`/`go vet` adımı CI'a eklenmedi
 - [ ] Remove the debug `log.Printf("using index at…")` in internal/index/db.go
-- [ ] Document/automate the lightningcss symlink + `go run` wails3 workarounds
+- [x] Document/automate the lightningcss symlink + `go run` wails3 workarounds — `task fix:lightningcss` + `WAILS_CLI` var
 - [ ] WS tabs/messages don't persist across restart
-- [ ] Settings rail icon was a stub (SettingsPanel.vue in progress)
+- [x] Settings rail icon was a stub (SettingsPanel.vue in progress) — `SettingsPanel.vue` artık tam
+- [x] Build & Release pipeline — `.github/workflows/build.yml`, 4 platform, auto-tag (conventional commits), `workflow_dispatch` `bump` input
+- [x] Auto-update — GitHub Releases self-update (`minio/selfupdate`), title-bar update pill
+- [x] README + LICENSE (MIT)
+- [ ] CI'a `v*` manuel tag push'unda release açan ayrı job
+- [ ] CI'a `go test` + `go vet` + `vue-tsc` adımları
+- [ ] macOS notarize, Windows code sign (cert gerek)
+- [ ] AppImage paketleme (Linux), Universal macOS binary (arm64+amd64 lipo)
+- [ ] CONTRIBUTING.md + `.github/ISSUE_TEMPLATE/`
+
+## E — Postman/Insomnia parity (2026-06-19 seansından)
+
+### Tamamlandı (12 yeni özellik)
+- [x] **Paste cURL** — Sidebar `+` menü → curl yapıştır → tab açar (`composables/curl.ts::parseCurl`, `useDialog::promptMultiline`)
+- [x] **Bulk paste headers** — Headers tab Key-Value ↔ Bulk Edit toggle, `#` ile disable
+- [x] **Dynamic variables** — `{{$timestamp}}` `{{$isoTimestamp}}` `{{$unixEpochMs}}` `{{$guid}}` `{{$randomUUID}}` `{{$randomInt}}` `{{$randomBoolean}}` `{{$randomEmail}}` `{{$randomFirstName}}` `{{$randomLastName}}` `{{$randomFullName}}` `{{$randomUserName}}` `{{$randomPassword}}` `{{$randomCity}}` `{{$randomCountry}}` `{{$randomCountryCode}}` `{{$randomPhoneNumber}}` `{{$randomUrl}}` `{{$randomIP}}` `{{$randomColor}}` `{{$randomCompanyName}}` `{{$randomLoremWord}}` `{{$randomLoremSentence}}` (`interpolate.go` + test)
+- [x] **Timing waterfall** — Response bar'da DNS/Connect/TLS/Wait/Download SVG + hover tooltip
+- [x] **HAR import** — Browser DevTools "Save all as HAR" yapıştır → `internal/har` parse + `AddItems` (test'i ile, pseudo-header filter)
+- [x] **Code generation — 8 dil** — cURL, Python `requests`, Node `fetch`, Go `net/http`, Java OkHttp, C# HttpClient, PowerShell, Raw HTTP wire (`useCodeGen.ts`)
+- [x] **JSON tree view + search** — Pretty/Raw/Tree toggle, collapsible JSON, key/value filter (`JsonTree.vue`, `JsonNode.vue`)
+- [x] **Command Palette (Cmd+K) + Quick Switcher (Cmd+P)** — FTS5 fuzzy request search + global action registry (`useCommands.ts`, `CommandPalette.vue`)
+- [x] **mTLS / client certificates** — Settings'te host pattern → cert/key path; wildcard + suffix match; per-request fresh TLS transport (`client.go::matchClientCert`)
+- [x] **Vault — masked secrets** — Env var `secret` flag, `type="password"` + 👁 reveal (`envstore.Var.Secret`, `EnvironmentsModal.vue`)
+- [x] **Proxy settings (global + per-request)** — Settings → Proxy URL, cache'li transport per-proxy (`client.go::transportFor`)
+- [x] **gRPC streaming başlığı** (eski parite içinde, henüz değil — aşağıda)
+
+### Devam edilecek
+
+**Orta efor (4–8 saat her biri)**
+- [ ] **Save as Example** — Response'u `detail.examples_json`'a snapshot. Workbench Examples sekmesi. Mock server için ön gereksinim.
+- [ ] **Request chaining — response reference syntax** — Insomnia tarzı `{{Login.response.body.$.token}}`. Backend in-memory cache name-keyed. `interpolate` öncesi resolve.
+- [ ] **SSE (Server-Sent Events) console** — `text/event-stream` Accept → `SseConsole.vue` (WsConsole pattern). Line-by-line scan → `sse:event` emit.
+- [ ] **GraphQL schema introspection + autocomplete** — `__schema` POST cache. CodeMirror graphql language (CodeMirror upgrade sonrası).
+- [ ] **gRPC streaming (server/client/bidi)** — `StreamCall` method, `grpc:event` emit, `GrpcConsole.vue` Send/Recv panel.
+- [ ] **Newman-style CLI runner** — `reqost run <collection.json>` alt-komutu, JUnit/JSON output, exit code.
+- [ ] **Mock server (Saved Examples)** — `reqost mock` veya in-app server. Saved Example'ları endpoint olarak serv et. **Save as Example sonrası.**
+
+**Büyük (1+ gün her biri)**
+- [ ] **Folder-level auth / headers / scripts inheritance** — `tree.folder` ek alanlar, send-time ancestor merge, child override.
+- [ ] **OAuth 2.0 flows (Auth Code + PKCE, Client Credentials, Password)** — `internal/oauth2`, localhost listener redirect, `Browser.OpenURL`, token cache + auto-refresh. **En büyük tek gap.**
+- [ ] **CodeMirror 6 editor upgrade** — body / scripts / response için. Tek `EditorPane.vue` wrapper, modlar: JSON/JS/XML/GraphQL/HTTP.
+- [ ] **Variable highlighting + autocomplete** — `{{var}}` renkli, hover preview, eksik var kırmızı, `{{` tetikleyince dropdown. **CodeMirror sonrası.**
+
+**Çok büyük (haftalar)**
+- [ ] **Multiple workspaces** — Tek DB → birden çok, `cache/workspaces/<id>/index.db`, title bar switcher.
+- [ ] **Git sync** — Workspace ↔ git repo, commit/branch/diff, `go-git`.
+- [ ] **API design-first (OpenAPI editor + mock)** — Sol-rail `Design` modu, Insomnia eşdeğeri.
+- [ ] **Plugin / extension sistemi** — `goja` sandbox, `preSend`/`postReceive`/`transformBody` hook'ları, custom auth providerlar.

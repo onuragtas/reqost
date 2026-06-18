@@ -4,6 +4,7 @@
 
 export {
     Auth,
+    ClientCert,
     Cookie,
     FormField,
     Header,

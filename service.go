@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"reqost/internal/collection"
+	"reqost/internal/har"
 	"reqost/internal/index"
 	"reqost/internal/openapi"
 	"reqost/internal/watcher"
@@ -114,6 +115,23 @@ func (s *CollectionService) PickImportOpenAPI() (string, error) {
 	}
 	s.emit("collection:ready", path)
 	return path, nil
+}
+
+// ImportHARBytes merges a HAR JSON document (typically pasted from browser
+// DevTools' "Save all as HAR") into the current collection. Each entry becomes
+// a request under a new HAR-tagged folder. Returns the number of imported
+// requests, or an error if the JSON is not valid HAR.
+func (s *CollectionService) ImportHARBytes(data string) (int, error) {
+	items, err := har.Parse([]byte(data))
+	if err != nil {
+		return 0, err
+	}
+	if err := s.db.AddItems(items); err != nil {
+		return 0, fmt.Errorf("index har: %w", err)
+	}
+	s.emit("collection:ready", "har-paste")
+	// Item 0 is the wrapping folder; rest are requests.
+	return len(items) - 1, nil
 }
 
 // PickExport opens a native save-file dialog and writes the Postman export to

@@ -16,6 +16,10 @@ type Var struct {
 	Key     string `json:"key"`
 	Value   string `json:"value"`
 	Enabled bool   `json:"enabled"`
+	// Secret marks a variable as sensitive — UI masks the value and offers
+	// opt-in reveal. Disk storage stays plaintext for now; this is presentation
+	// + clipboard-leak guard. Real at-rest secrecy = OS keychain, future work.
+	Secret bool `json:"secret,omitempty"`
 }
 
 type Environment struct {

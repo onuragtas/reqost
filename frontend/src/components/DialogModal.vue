@@ -5,9 +5,14 @@ import { useDialog } from '../composables/useDialog'
 
 const { state, submit, cancel } = useDialog()
 const input = ref<HTMLInputElement | null>(null)
+const area = ref<HTMLTextAreaElement | null>(null)
 
 watch(() => state.open, (open) => {
-  if (open && state.mode === 'prompt') nextTick(() => input.value?.focus())
+  if (!open) return
+  nextTick(() => {
+    if (state.mode === 'prompt') input.value?.focus()
+    if (state.mode === 'prompt-multiline') area.value?.focus()
+  })
 })
 
 function openLink(url: string) { Browser.OpenURL(url) }
@@ -33,6 +38,17 @@ function openLink(url: string) { Browser.OpenURL(url) }
         @keyup.enter="submit"
         @keyup.esc="cancel"
       />
+      <textarea
+        v-if="state.mode === 'prompt-multiline'"
+        ref="area"
+        v-model="state.value"
+        class="textarea"
+        :placeholder="state.placeholder"
+        spellcheck="false"
+        @keydown.esc="cancel"
+        @keydown.meta.enter="submit"
+        @keydown.ctrl.enter="submit"
+      />
       <div class="actions">
         <button class="cancel" @click="cancel">Cancel</button>
         <button class="ok" :class="{ danger: state.danger }" @click="submit">{{ state.okLabel }}</button>
@@ -49,6 +65,13 @@ function openLink(url: string) { Browser.OpenURL(url) }
 .dialog-link:hover { text-decoration: underline; }
 .input { width: 100%; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); font: 13px monospace; padding: 9px 11px; margin-bottom: 14px; }
 .input:focus { outline: none; border-color: var(--accent); }
+.textarea {
+  width: 100%; min-height: 180px; resize: vertical;
+  background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 6px;
+  color: var(--text); font: 12px/1.5 monospace; padding: 10px 12px; margin-bottom: 14px;
+  white-space: pre; overflow: auto;
+}
+.textarea:focus { outline: none; border-color: var(--accent); }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .cancel { color: var(--text-dim); font-size: 13px; padding: 7px 14px; border-radius: 6px; }
 .cancel:hover { background: var(--bg-hover); }

@@ -1,6 +1,19 @@
 import type { HeaderRow, Auth, BodyType } from './useTabs'
 
-export type CodeLang = 'curl' | 'python' | 'javascript' | 'go'
+export type CodeLang =
+  | 'curl' | 'python' | 'javascript' | 'go'
+  | 'java' | 'csharp' | 'powershell' | 'http'
+
+export const CODE_LANGS: { id: CodeLang; label: string }[] = [
+  { id: 'curl',       label: 'cURL' },
+  { id: 'python',     label: 'Python (requests)' },
+  { id: 'javascript', label: 'JavaScript (fetch)' },
+  { id: 'go',         label: 'Go (net/http)' },
+  { id: 'java',       label: 'Java (OkHttp)' },
+  { id: 'csharp',     label: 'C# (HttpClient)' },
+  { id: 'powershell', label: 'PowerShell' },
+  { id: 'http',       label: 'Raw HTTP' },
+]
 
 export interface CodeGenInput {
   method: string
@@ -67,6 +80,84 @@ export function generateJS(input: CodeGenInput): string {
 const data = await response.text();
 console.log(response.status, data);
 `
+}
+
+// ── Java OkHttp ────────────────────────────────────────────────────────────
+export function generateJava(input: CodeGenInput): string {
+  const headers = allHeaders(input)
+  const m = input.method.toUpperCase()
+  const has = hasBody(input)
+  const bodyLine = has
+    ? `RequestBody body = RequestBody.create(${JSON.stringify(input.body)}, MediaType.parse("application/octet-stream"));\n`
+    : ''
+  const methodCall = m === 'GET'
+    ? '.get()'
+    : `.method("${m}", ${has ? 'body' : (m === 'POST' || m === 'PUT' || m === 'PATCH' ? 'RequestBody.create(new byte[0])' : 'null')})`
+  const headerLines = headers.map(h => `  .addHeader(${JSON.stringify(h.key)}, ${JSON.stringify(h.value)})`).join('\n')
+  return `OkHttpClient client = new OkHttpClient();
+
+${bodyLine}Request req = new Request.Builder()
+  .url(${JSON.stringify(input.url)})
+${headerLines ? headerLines + '\n' : ''}  ${methodCall}
+  .build();
+
+try (Response resp = client.newCall(req).execute()) {
+  System.out.println(resp.code());
+  System.out.println(resp.body().string());
+}
+`
+}
+
+// ── C# HttpClient ──────────────────────────────────────────────────────────
+export function generateCSharp(input: CodeGenInput): string {
+  const headers = allHeaders(input)
+  const m = input.method.toUpperCase()
+  const has = hasBody(input)
+  const lines = [
+    `using var client = new HttpClient();`,
+    `var req = new HttpRequestMessage(new HttpMethod(${JSON.stringify(m)}), ${JSON.stringify(input.url)});`,
+  ]
+  for (const h of headers) {
+    lines.push(`req.Headers.TryAddWithoutValidation(${JSON.stringify(h.key)}, ${JSON.stringify(h.value)});`)
+  }
+  if (has) lines.push(`req.Content = new StringContent(${JSON.stringify(input.body)});`)
+  lines.push(
+    `var resp = await client.SendAsync(req);`,
+    `Console.WriteLine((int)resp.StatusCode);`,
+    `Console.WriteLine(await resp.Content.ReadAsStringAsync());`,
+  )
+  return lines.join('\n')
+}
+
+// ── PowerShell Invoke-RestMethod ───────────────────────────────────────────
+export function generatePowerShell(input: CodeGenInput): string {
+  const headers = allHeaders(input)
+  const m = input.method.toUpperCase()
+  const has = hasBody(input)
+  const hb = headers.length
+    ? `$headers = @{\n${headers.map(h => `  ${JSON.stringify(h.key)} = ${JSON.stringify(h.value)}`).join('\n')}\n}\n`
+    : ''
+  const args = [`-Method ${m}`, `-Uri ${JSON.stringify(input.url)}`]
+  if (headers.length) args.push('-Headers $headers')
+  if (has) args.push(`-Body ${JSON.stringify(input.body)}`)
+  return `${hb}Invoke-RestMethod ${args.join(' ')}`
+}
+
+// ── Raw HTTP wire ──────────────────────────────────────────────────────────
+export function generateHTTP(input: CodeGenInput): string {
+  const headers = allHeaders(input)
+  let pathQuery = input.url, host = ''
+  try {
+    const u = new URL(input.url.replace(/{{[^}]+}}/g, 'x'))
+    pathQuery = u.pathname + u.search
+    host = u.host
+  } catch { /* keep raw url */ }
+  const lines: string[] = [`${input.method.toUpperCase()} ${pathQuery} HTTP/1.1`]
+  if (host) lines.push(`Host: ${host}`)
+  for (const h of headers) lines.push(`${h.key}: ${h.value}`)
+  lines.push('')
+  if (input.body) lines.push(input.body)
+  return lines.join('\n')
 }
 
 export function generateGo(input: CodeGenInput): string {

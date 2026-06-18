@@ -2,11 +2,19 @@ import { reactive, watch } from 'vue'
 
 // AppSettings holds global, app-wide defaults persisted to localStorage.
 // Per-request fields (timeout, ...) can override these.
+export interface ClientCert {
+  hostPattern: string  // e.g. "api.example.com", "*.corp.local"
+  certPath: string
+  keyPath: string
+}
+
 export interface AppSettings {
   defaultTimeoutMs: number       // 0 = no timeout
   defaultFollowRedirects: boolean
   defaultVerifySSL: boolean
   defaultMaxRedirects: number    // 0 = library default
+  proxyURL: string               // empty = use system proxy from env
+  clientCerts: ClientCert[]      // mTLS — first matching pattern wins
 }
 
 const KEY = 'reqost:settings:v1'
@@ -16,6 +24,8 @@ const DEFAULTS: AppSettings = {
   defaultFollowRedirects: true,
   defaultVerifySSL: true,
   defaultMaxRedirects: 10,
+  proxyURL: '',
+  clientCerts: [],
 }
 
 function load(): AppSettings {

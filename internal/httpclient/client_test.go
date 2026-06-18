@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +58,38 @@ func TestInterpolate(t *testing.T) {
 	want := "https://api.test/v2/users/{{missing}}"
 	if got != want {
 		t.Errorf("interpolate = %q, want %q", got, want)
+	}
+}
+
+func TestDynamicVariables(t *testing.T) {
+	// $timestamp must be an int.
+	ts := interpolate("{{$timestamp}}", nil)
+	if _, err := strconv.Atoi(ts); err != nil {
+		t.Errorf("$timestamp not numeric: %q", ts)
+	}
+
+	// $guid must look like a UUIDv4.
+	g := interpolate("{{$guid}}", nil)
+	if len(g) != 36 || g[8] != '-' || g[14] != '4' {
+		t.Errorf("$guid not a UUIDv4: %q", g)
+	}
+
+	// $randomInt must parse as int.
+	ri := interpolate("{{$randomInt}}", nil)
+	if _, err := strconv.Atoi(ri); err != nil {
+		t.Errorf("$randomInt not numeric: %q", ri)
+	}
+
+	// Unknown $-prefixed key must stay as-is (helps the user spot typos).
+	u := interpolate("{{$nopeSuchVar}}", nil)
+	if u != "{{$nopeSuchVar}}" {
+		t.Errorf("unknown dynamic var resolved: %q", u)
+	}
+
+	// Mixed static + dynamic in one string.
+	mixed := interpolate("{{baseUrl}}/{{$randomEmail}}", map[string]string{"baseUrl": "http://x"})
+	if !strings.HasPrefix(mixed, "http://x/") || !strings.Contains(mixed, "@example.com") {
+		t.Errorf("mixed = %q", mixed)
 	}
 }
 

@@ -1,7 +1,7 @@
 import { reactive, computed } from 'vue'
 import { LoadEnvironments, SaveEnvironments } from '../../bindings/reqost/envservice'
 
-export interface EnvVar { key: string; value: string; enabled: boolean }
+export interface EnvVar { key: string; value: string; enabled: boolean; secret?: boolean }
 export interface Environment { id: string; name: string; vars: EnvVar[] }
 
 const state = reactive({

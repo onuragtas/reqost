@@ -4,7 +4,7 @@ import { reactive } from 'vue'
 // does not implement — they silently return null, breaking every create/rename/
 // delete/import flow. These resolve a Promise from a real modal instead.
 
-type Mode = 'prompt' | 'confirm'
+type Mode = 'prompt' | 'prompt-multiline' | 'confirm'
 
 const state = reactive({
   open: false,
@@ -39,6 +39,19 @@ export function useDialog() {
       state._resolve = res
     })
   }
+  function promptMultiline(title: string, defaultValue = '', placeholder = ''): Promise<string | null> {
+    return new Promise((res) => {
+      state.open = true
+      state.mode = 'prompt-multiline'
+      state.title = title
+      state.value = defaultValue
+      state.placeholder = placeholder
+      state.okLabel = 'OK'
+      state.danger = false
+      state.link = null
+      state._resolve = res
+    })
+  }
   function confirm(title: string, okLabel = 'Delete'): Promise<boolean> {
     return new Promise((res) => {
       state.open = true
@@ -49,8 +62,8 @@ export function useDialog() {
       state._resolve = res
     })
   }
-  function submit() { state.link = null; finish(state.mode === 'prompt' ? state.value : true) }
-  function cancel() { state.link = null; finish(state.mode === 'prompt' ? null : false) }
+  function submit() { state.link = null; finish(state.mode === 'confirm' ? true : state.value) }
+  function cancel() { state.link = null; finish(state.mode === 'confirm' ? false : null) }
 
-  return { state, prompt, confirm, submit, cancel }
+  return { state, prompt, promptMultiline, confirm, submit, cancel }
 }

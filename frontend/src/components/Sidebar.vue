@@ -5,13 +5,14 @@ import { Events } from '@wailsio/runtime'
 import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
   GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL, ImportAllFromPostman, ClearAll,
+  ImportHARBytes,
 } from '../../bindings/reqost/collectionservice'
 import { PickImportEnv } from '../../bindings/reqost/envservice'
 import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
 import { useRunner } from '../composables/useRunner'
 import { useDialog } from '../composables/useDialog'
-import { toCurl } from '../composables/curl'
+import { toCurl, parseCurl } from '../composables/curl'
 
 const { flatList, loadRoot, toggleNode, searchNodes, refreshNode, removeNode, reloadChildren } = useTree()
 
@@ -133,11 +134,13 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'New Folder', run: () => createUnder('', 'folder') },
       { label: 'New WebSocket', run: () => openAdhoc({ name: 'WebSocket', method: 'GET', url: 'wss://' }) },
       { label: 'New gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
+      { label: 'Paste cURL…', run: onPasteCurl },
       { label: 'Run Collection', run: () => runColl('') },
       { label: 'Import all from Postman…', run: onImportAllFromPostman },
       { label: 'Import Collection…', run: onImport },
       { label: 'Import Environment…', run: onImportEnv },
       { label: 'Import OpenAPI…', run: onImportOpenAPI },
+      { label: 'Import HAR (paste)…', run: onImportHAR },
       { label: 'Import from URL…', run: onImportFromURL },
       { label: 'Export Collection…', run: onExport },
       { label: 'Delete All', run: onClearAll, danger: true },
@@ -253,6 +256,52 @@ function onSearchInput() {
 
 async function onImport() {
   await PickImport() // native open-file dialog; import events update the tree
+}
+
+async function onPasteCurl() {
+  const text = await dialog.promptMultiline(
+    'Paste cURL command',
+    '',
+    "curl 'https://api.example.com/v1/users' -H 'Authorization: Bearer …' --data '{}'",
+  )
+  if (!text?.trim()) return
+  const parsed = parseCurl(text)
+  if (!parsed) {
+    flashError('Paste cURL', new Error("doesn't look like a curl command"))
+    return
+  }
+  // Heuristic name: host + last path segment.
+  let name = parsed.url
+  try {
+    const u = new URL(parsed.url.replace(/{{[^}]+}}/g, 'x'))
+    const seg = u.pathname.split('/').filter(Boolean).pop() || u.host
+    name = `${parsed.method} ${seg}`
+  } catch { /* leave name as full URL */ }
+  openAdhoc({
+    name,
+    method: parsed.method,
+    url: parsed.url,
+    headers: parsed.headers,
+    body: parsed.body,
+    bodyType: parsed.bodyType,
+    formFields: parsed.formFields,
+  })
+}
+
+async function onImportHAR() {
+  const text = await dialog.promptMultiline(
+    'Paste HAR JSON',
+    '',
+    'Browser DevTools → Network → "Save all as HAR with content" → paste here',
+  )
+  if (!text?.trim()) return
+  try {
+    const n = await ImportHARBytes(text)
+    statusMsg.value = `Imported ${n} request(s) from HAR`
+    setTimeout(() => { if (statusMsg.value.startsWith('Imported')) statusMsg.value = '' }, 2500)
+  } catch (e) {
+    flashError('HAR import failed', e)
+  }
 }
 
 async function onImportOpenAPI() {

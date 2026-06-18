@@ -9,10 +9,15 @@ import EnvironmentsModal from './components/EnvironmentsModal.vue'
 import RunnerModal from './components/RunnerModal.vue'
 import DialogModal from './components/DialogModal.vue'
 import HistoryPanel from './components/HistoryPanel.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
+import CommandPalette from './components/CommandPalette.vue'
+import { useCommands } from './composables/useCommands'
 import { useEnv } from './composables/useEnv'
+import { useTheme } from './composables/useTheme'
+import SettingsPanel from './components/SettingsPanel.vue'
 
 const { loadEnvironments, openModal } = useEnv()
+const { register, open: openPalette } = useCommands()
+const { toggle: toggleTheme } = useTheme()
 
 // Left-rail mode. 'environments' is a modal, so it doesn't become a panel.
 const mode = ref<Exclude<Mode, 'environments'>>('collections')
@@ -22,7 +27,28 @@ function onMode(m: Mode) {
   mode.value = m
 }
 
-onMounted(loadEnvironments)
+// Global commands registered on mount — components register their own as well.
+function registerGlobalCommands() {
+  register({ id: 'go.collections', label: 'Go to: Collections', group: 'Navigation', run: () => (mode.value = 'collections') })
+  register({ id: 'go.history',     label: 'Go to: History',     group: 'Navigation', run: () => (mode.value = 'history') })
+  register({ id: 'go.settings',    label: 'Go to: Settings',    group: 'Navigation', run: () => (mode.value = 'settings') })
+  register({ id: 'env.open',       label: 'Manage environments…', group: 'Navigation', run: openModal })
+  register({ id: 'theme.toggle',   label: 'Toggle theme (light/dark)', group: 'Appearance', run: toggleTheme })
+}
+
+// Cmd+K → command palette; Cmd+P → quick request switcher.
+function onKey(e: KeyboardEvent) {
+  if (!(e.metaKey || e.ctrlKey)) return
+  const k = e.key.toLowerCase()
+  if (k === 'k') { e.preventDefault(); openPalette('commands') }
+  else if (k === 'p') { e.preventDefault(); openPalette('search') }
+}
+
+onMounted(() => {
+  loadEnvironments()
+  registerGlobalCommands()
+  window.addEventListener('keydown', onKey)
+})
 </script>
 
 <template>
@@ -44,6 +70,7 @@ onMounted(loadEnvironments)
     <EnvironmentsModal />
     <RunnerModal />
     <DialogModal />
+    <CommandPalette />
   </div>
 </template>
 

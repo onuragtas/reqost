@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptrace"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +28,12 @@ type Client struct {
 	jar             http.CookieJar
 	secureTransp    http.RoundTripper
 	insecureTransp  http.RoundTripper
+
+	// proxyCache memoizes transports keyed by "secure?proxyURL" so requests
+	// routed through the same proxy reuse their connection pool. Per-request
+	// proxy override is rare in practice but should still pool when it
+	// happens (e.g. CI fanning out via one corporate proxy).
+	proxyCache sync.Map // map[string]http.RoundTripper
 }
 
 func New() *Client {
@@ -39,11 +47,112 @@ func New() *Client {
 	}
 }
 
+// transportFor returns the transport for one Execute call, picking the secure
+// or TLS-insecure pool and overlaying a custom proxy and/or mTLS client
+// certificates when the request asks for them.
+func (c *Client) transportFor(req Request) http.RoundTripper {
+	clientCert := matchClientCert(req.ClientCerts, req.URL)
+
+	if req.ProxyURL == "" && clientCert == nil {
+		if req.InsecureSkipVerify {
+			return c.insecureTransp
+		}
+		return c.secureTransp
+	}
+
+	// With mTLS we always build a fresh transport so the cert lives only on
+	// this request's pool — switching identities mid-session shouldn't leak
+	// the previous one into a pooled connection.
+	if clientCert != nil {
+		t := &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			TLSClientConfig: &tls.Config{
+				Certificates:       []tls.Certificate{*clientCert},
+				InsecureSkipVerify: req.InsecureSkipVerify, //nolint:gosec
+			},
+		}
+		if req.ProxyURL != "" {
+			if u, err := url.Parse(req.ProxyURL); err == nil {
+				t.Proxy = http.ProxyURL(u)
+			}
+		}
+		return t
+	}
+
+	key := req.ProxyURL
+	if req.InsecureSkipVerify {
+		key = "insecure:" + key
+	}
+	if cached, ok := c.proxyCache.Load(key); ok {
+		return cached.(http.RoundTripper)
+	}
+
+	u, err := url.Parse(req.ProxyURL)
+	if err != nil {
+		// Bad proxy URL → fall back to no proxy. The host:port itself will
+		// surface the error in the response.
+		if req.InsecureSkipVerify {
+			return c.insecureTransp
+		}
+		return c.secureTransp
+	}
+
+	t := &http.Transport{
+		Proxy: http.ProxyURL(u),
+	}
+	if req.InsecureSkipVerify {
+		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec — opt-in
+	}
+	actual, _ := c.proxyCache.LoadOrStore(key, http.RoundTripper(t))
+	return actual.(http.RoundTripper)
+}
+
 func insecureTransport() http.RoundTripper {
 	return &http.Transport{
 		Proxy:           http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — opt-in via per-request flag
 	}
+}
+
+// matchClientCert returns the certificate to present for the request URL, or
+// nil if no pattern matches. Loading happens here (per-call) so the user can
+// edit the cert on disk and pick it up without restarting reqost.
+func matchClientCert(certs []ClientCert, rawurl string) *tls.Certificate {
+	if len(certs) == 0 {
+		return nil
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return nil
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, c := range certs {
+		if !hostMatches(host, c.HostPattern) {
+			continue
+		}
+		cert, err := tls.LoadX509KeyPair(c.CertPath, c.KeyPath)
+		if err != nil {
+			continue
+		}
+		return &cert
+	}
+	return nil
+}
+
+// hostMatches supports plain hostnames ("api.example.com"), wildcard prefixes
+// ("*.example.com" → ".example.com" suffix), and bare suffixes ("example.com").
+func hostMatches(host, pattern string) bool {
+	if pattern == "" {
+		return false
+	}
+	p := strings.ToLower(pattern)
+	if strings.HasPrefix(p, "*.") {
+		p = p[1:] // -> ".example.com"
+	}
+	if strings.HasPrefix(p, ".") {
+		return strings.HasSuffix(host, p) || host == strings.TrimPrefix(p, ".")
+	}
+	return host == p
 }
 
 // ErrTooManyRedirects is returned when MaxRedirects is reached.
@@ -94,10 +203,7 @@ func (c *Client) Execute(ctx context.Context, req Request) (*Response, error) {
 	var t timings
 	httpReq = httpReq.WithContext(httptrace.WithClientTrace(httpReq.Context(), t.trace()))
 
-	transport := c.secureTransp
-	if req.InsecureSkipVerify {
-		transport = c.insecureTransp
-	}
+	transport := c.transportFor(req)
 	maxRedirects := req.MaxRedirects
 	if maxRedirects <= 0 {
 		maxRedirects = 10

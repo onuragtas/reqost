@@ -156,6 +156,18 @@ export function ImportFromURL(rawURL) {
 }
 
 /**
+ * ImportHARBytes merges a HAR JSON document (typically pasted from browser
+ * DevTools' "Save all as HAR") into the current collection. Each entry becomes
+ * a request under a new HAR-tagged folder. Returns the number of imported
+ * requests, or an error if the JSON is not valid HAR.
+ * @param {string} data
+ * @returns {$CancellablePromise<number>}
+ */
+export function ImportHARBytes(data) {
+    return $Call.ByID(3510927218, data);
+}
+
+/**
  * ListRequestsUnder returns the requests at/below a node in run order. Used by
  * the Collection Runner.
  * @param {string} id

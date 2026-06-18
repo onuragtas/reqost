@@ -52,6 +52,25 @@ function openReleases() {
         <label>Verify SSL</label>
         <input type="checkbox" v-model="settings.defaultVerifySSL" />
       </div>
+      <div class="row col">
+        <label>Proxy URL</label>
+        <input
+          v-model="settings.proxyURL" class="proxy-input"
+          placeholder="http://user:pass@proxy.host:8080  (leave empty to use $HTTPS_PROXY)"
+        />
+      </div>
+    </section>
+
+    <section class="block">
+      <h4>Client certificates (mTLS)</h4>
+      <p class="hint">First pattern that matches a request's host wins. Wildcards: <code>*.corp.local</code> or bare suffix <code>.internal</code>.</p>
+      <div v-for="(c, i) in settings.clientCerts" :key="i" class="cert-row">
+        <input v-model="c.hostPattern" placeholder="Host (e.g. *.corp.local)" class="cert-in" />
+        <input v-model="c.certPath" placeholder="/path/to/client.crt" class="cert-in" />
+        <input v-model="c.keyPath" placeholder="/path/to/client.key" class="cert-in" />
+        <button class="cert-del" @click="settings.clientCerts.splice(i, 1)">✕</button>
+      </div>
+      <button class="ghost" @click="settings.clientCerts.push({ hostPattern: '', certPath: '', keyPath: '' })">+ Add certificate</button>
     </section>
 
     <section class="block">
@@ -139,6 +158,19 @@ function openReleases() {
 }
 .row input[type="number"]:focus { outline: none; border-color: var(--accent); }
 .row input[type="checkbox"] { accent-color: var(--accent); }
+.row.col { flex-direction: column; align-items: stretch; gap: 4px; }
+.row.col label { font-size: 11px; color: var(--text-faint); }
+.proxy-input {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font: 12px monospace; padding: 5px 8px;
+}
+.proxy-input:focus { outline: none; border-color: var(--accent); }
+.cert-row { display: grid; grid-template-columns: 1fr 1fr 1fr 22px; gap: 4px; align-items: center; margin-top: 6px; }
+.cert-in { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font: 11px monospace; padding: 4px 6px; }
+.cert-in:focus { outline: none; border-color: var(--accent); }
+.cert-del { font-size: 11px; color: var(--danger); padding: 2px 4px; }
+.cert-del:hover { background: var(--bg-hover); }
+.hint code { background: var(--bg-input); padding: 0 4px; border-radius: 3px; font-size: 10.5px; }
 .hint { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
 .pill {
   background: var(--bg-input);

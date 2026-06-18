@@ -121,6 +121,16 @@ export class Var {
              */
             this["enabled"] = false;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * Secret marks a variable as sensitive — UI masks the value and offers
+             * opt-in reveal. Disk storage stays plaintext for now; this is presentation
+             * + clipboard-leak guard. Real at-rest secrecy = OS keychain, future work.
+             * @member
+             * @type {boolean | undefined}
+             */
+            this["secret"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }

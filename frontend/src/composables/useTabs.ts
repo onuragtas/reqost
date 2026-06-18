@@ -71,6 +71,8 @@ export interface AdhocRequest {
   url: string
   headers?: HeaderRow[]
   body?: string
+  bodyType?: BodyType
+  formFields?: FormRow[]
   auth?: Auth
 }
 
@@ -227,7 +229,8 @@ export function useTabs() {
     tab.params = parseQuery(req.url)
     tab.headers = req.headers ? req.headers.map(h => ({ ...h })) : []
     tab.body = req.body ?? ''
-    tab.bodyType = tab.body ? 'raw' : 'none'
+    tab.bodyType = req.bodyType ?? (tab.body ? 'raw' : 'none')
+    tab.formFields = req.formFields ? req.formFields.map(f => ({ ...f })) : []
     if (req.auth) tab.auth = { ...req.auth }
     tab.loading = false
     markClean(tab)
