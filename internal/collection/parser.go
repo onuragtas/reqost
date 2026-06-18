@@ -36,6 +36,7 @@ func ParseFile(path string) ([]FlatItem, []CollectionVar, error) {
 
 // ParseBytes parses a Postman Collection v2.1 JSON from raw bytes.
 // It also handles the Postman API envelope: {"collection": {...}}.
+// Returns the flat item list and any root-level collection variables.
 func ParseBytes(data []byte) ([]FlatItem, []CollectionVar, error) {
 	// Postman API wraps the collection: {"collection": { "info":…, "item":… }}
 	var envelope struct {

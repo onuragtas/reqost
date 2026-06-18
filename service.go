@@ -270,14 +270,7 @@ func (s *CollectionService) reimport(path string) {
 	// would clobber user edits. Import is a deliberate, user-initiated replace.
 
 	if len(vars) > 0 && s.envSvc != nil {
-		name := path
-		if i := strings.LastIndexAny(path, "/\\"); i >= 0 {
-			name = path[i+1:]
-		}
-		if i := strings.LastIndex(name, "."); i >= 0 {
-			name = name[:i]
-		}
-		s.envSvc.mergeCollectionVars(name, vars)
+		s.envSvc.mergeCollectionVars(path, vars)
 	}
 
 	log.Printf("indexed %d items from %s", len(items), path)
@@ -338,17 +331,20 @@ func (s *CollectionService) ImportFromURL(rawURL string) error {
 		ct := resp.Header.Get("Content-Type")
 		isYAML := strings.Contains(ct, "yaml") || strings.HasSuffix(strings.ToLower(rawURL), ".yaml") || strings.HasSuffix(strings.ToLower(rawURL), ".yml")
 
-		// Try Postman collection first (JSON only).
+		// Try Postman environment file (JSON only, no items).
 		if !isYAML {
-			// Try Postman environment file
-			if name, vars, envErr := collection.ParseEnvBytes(body); envErr == nil && len(vars) > 0 {
+			if name, vars, err := collection.ParseEnvBytes(body); err == nil && len(vars) > 0 {
 				if s.envSvc != nil {
 					s.envSvc.mergeCollectionVars(name, vars)
 				}
+				log.Printf("imported env %q (%d vars) from URL %s", name, len(vars), rawURL)
 				s.emit("collection:ready", rawURL)
 				return
 			}
-			// Try Postman collection
+		}
+
+		// Try Postman collection (JSON only).
+		if !isYAML {
 			if items, vars, err := collection.ParseBytes(body); err == nil && len(items) > 0 {
 				if err := s.db.ImportItems(rawURL, 0, items); err != nil {
 					s.emit("collection:error", fmt.Sprintf("index collection: %v", err))

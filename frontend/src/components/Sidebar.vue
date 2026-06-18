@@ -6,6 +6,7 @@ import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
   GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL, ImportAllFromPostman, ClearAll,
 } from '../../bindings/reqost/collectionservice'
+import { PickImportEnv } from '../../bindings/reqost/envservice'
 import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
 import { useRunner } from '../composables/useRunner'
@@ -135,6 +136,7 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'Run Collection', run: () => runColl('') },
       { label: 'Import all from Postman…', run: onImportAllFromPostman },
       { label: 'Import Collection…', run: onImport },
+      { label: 'Import Environment…', run: onImportEnv },
       { label: 'Import OpenAPI…', run: onImportOpenAPI },
       { label: 'Import from URL…', run: onImportFromURL },
       { label: 'Export Collection…', run: onExport },

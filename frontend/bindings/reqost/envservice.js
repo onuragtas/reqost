@@ -17,6 +17,15 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as envstore$0 from "./internal/envstore/models.js";
 
 /**
+ * ImportEnvFromURL fetches a Postman environment JSON from a URL and imports it.
+ * @param {string} rawURL
+ * @returns {$CancellablePromise<string>}
+ */
+export function ImportEnvFromURL(rawURL) {
+    return $Call.ByID(693005259, rawURL);
+}
+
+/**
  * LoadEnvironments returns the persisted environments + active selection.
  * @returns {$CancellablePromise<envstore$0.State>}
  */
@@ -24,6 +33,15 @@ export function LoadEnvironments() {
     return $Call.ByID(3654828536).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType0($result);
     }));
+}
+
+/**
+ * PickImportEnv opens a native file dialog and imports a Postman environment
+ * export JSON. Returns the environment name on success.
+ * @returns {$CancellablePromise<string>}
+ */
+export function PickImportEnv() {
+    return $Call.ByID(3274123121);
 }
 
 /**

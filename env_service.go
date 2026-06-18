@@ -1,12 +1,12 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -46,7 +46,7 @@ func (s *EnvService) SaveEnvironments(state envstore.State) error {
 }
 
 // PickImportEnv opens a native file dialog and imports a Postman environment
-// JSON file. Returns "" if cancelled.
+// export JSON. Returns the environment name on success.
 func (s *EnvService) PickImportEnv() (string, error) {
 	if s.dialog == nil {
 		return "", fmt.Errorf("dialog unavailable")
@@ -56,92 +56,98 @@ func (s *EnvService) PickImportEnv() (string, error) {
 	d.AddFilter("JSON", "*.json")
 	d.CanChooseFiles(true)
 	path, err := d.PromptForSingleSelection()
-	if err != nil {
+	if err != nil || path == "" {
 		return "", err
-	}
-	if path == "" {
-		return "", nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read env file: %w", err)
+		return "", fmt.Errorf("read file: %w", err)
 	}
 	name, vars, err := collection.ParseEnvBytes(data)
 	if err != nil {
-		return "", fmt.Errorf("parse env: %w", err)
+		// Might be a collection with only root variables — try that.
+		_, collVars, cerr := collection.ParseBytes(data)
+		if cerr != nil || len(collVars) == 0 {
+			return "", fmt.Errorf("not a Postman environment file: %w", err)
+		}
+		name = strings.TrimSuffix(filepath.Base(path), ".json")
+		vars = collVars
 	}
-	return path, s.mergeCollectionVars(name, vars)
+	s.mergeCollectionVars(name, vars)
+	log.Printf("imported env %q (%d vars) from %s", name, len(vars), path)
+	return name, nil
 }
 
 // ImportEnvFromURL fetches a Postman environment JSON from a URL and imports it.
-func (s *EnvService) ImportEnvFromURL(rawURL string) error {
-	if rawURL == "" {
-		return fmt.Errorf("URL is empty")
-	}
+// Returns the imported environment name on success.
+func (s *EnvService) ImportEnvFromURL(rawURL string) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("GET", rawURL, nil)
+	resp, err := client.Get(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("fetch failed: %w", err)
+		return "", fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+		return "", fmt.Errorf("read: %w", err)
 	}
 	name, vars, err := collection.ParseEnvBytes(data)
 	if err != nil {
-		return fmt.Errorf("parse env: %w", err)
+		return "", err
 	}
-	return s.mergeCollectionVars(name, vars)
+	s.mergeCollectionVars(name, vars)
+	return name, nil
 }
 
-// mergeCollectionVars upserts an environment named `name` with the given
-// variables. If an environment with that name already exists its vars are
-// replaced; otherwise a new one is created.
-func (s *EnvService) mergeCollectionVars(name string, vars []collection.CollectionVar) error {
+// mergeCollectionVars upserts an environment named after sourceName with the
+// given variables. If an environment with that name already exists, its
+// variables are replaced. The environment is NOT set as active.
+func (s *EnvService) mergeCollectionVars(sourceName string, vars []collection.CollectionVar) {
+	if len(vars) == 0 {
+		return
+	}
 	st, err := s.store.Load()
 	if err != nil {
-		return err
+		log.Printf("mergeCollectionVars: load: %v", err)
+		return
 	}
-	env := findEnvByName(st.Environments, name)
-	if env == nil {
-		id := randEnvID()
-		st.Environments = append(st.Environments, envstore.Environment{
-			ID:   id,
-			Name: name,
-			Vars: collVarsToEnv(vars),
-		})
-	} else {
-		env.Vars = collVarsToEnv(vars)
-	}
-	return s.store.Save(st)
-}
 
-func findEnvByName(envs []envstore.Environment, name string) *envstore.Environment {
-	for i := range envs {
-		if strings.EqualFold(envs[i].Name, name) {
-			return &envs[i]
+	// Derive a friendly name — strip any path prefix and extension.
+	name := sourceName
+	if idx := strings.LastIndexAny(name, "/\\"); idx >= 0 {
+		name = name[idx+1:]
+	}
+	name = strings.TrimSuffix(name, ".json")
+	if name == "" {
+		name = "Collection Variables"
+	}
+
+	newVars := make([]envstore.Var, 0, len(vars))
+	for _, v := range vars {
+		newVars = append(newVars, envstore.Var{Key: v.Key, Value: v.Value, Enabled: v.Enabled})
+	}
+
+	found := false
+	for i, env := range st.Environments {
+		if env.Name == name {
+			st.Environments[i].Vars = newVars
+			found = true
+			break
 		}
 	}
-	return nil
-}
-
-func collVarsToEnv(vars []collection.CollectionVar) []envstore.Var {
-	out := make([]envstore.Var, 0, len(vars))
-	for _, v := range vars {
-		out = append(out, envstore.Var{Key: v.Key, Value: v.Value, Enabled: v.Enabled})
+	if !found {
+		newID := fmt.Sprintf("colvar-%d", time.Now().UnixNano())
+		st.Environments = append(st.Environments, envstore.Environment{
+			ID:   newID,
+			Name: name,
+			Vars: newVars,
+		})
 	}
-	return out
-}
 
-func randEnvID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("env-%d", time.Now().UnixNano())
+	if err := s.store.Save(st); err != nil {
+		log.Printf("mergeCollectionVars: save: %v", err)
 	}
-	return hex.EncodeToString(b)
 }
