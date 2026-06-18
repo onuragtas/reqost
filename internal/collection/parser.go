@@ -31,9 +31,32 @@ func ParseFile(path string) ([]FlatItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read collection: %w", err)
 	}
+	return ParseBytes(data)
+}
+
+// ParseBytes parses a Postman Collection v2.1 JSON from raw bytes.
+// It also handles the Postman API envelope: {"collection": {...}}.
+func ParseBytes(data []byte) ([]FlatItem, error) {
+	// Postman API wraps the collection: {"collection": { "info":…, "item":… }}
+	var envelope struct {
+		Collection *Collection `json:"collection"`
+	}
+	if err := json.Unmarshal(data, &envelope); err == nil && envelope.Collection != nil {
+		col := envelope.Collection
+		var items []FlatItem
+		for i, item := range col.Item {
+			flatten(&items, item, "", i)
+		}
+		return items, nil
+	}
+
 	var col Collection
 	if err := json.Unmarshal(data, &col); err != nil {
 		return nil, fmt.Errorf("parse collection json: %w", err)
+	}
+	// Require at least an info block or items so we don't misidentify OpenAPI as a collection.
+	if col.Info.Name == "" && len(col.Item) == 0 {
+		return nil, fmt.Errorf("not a Postman collection")
 	}
 
 	var items []FlatItem

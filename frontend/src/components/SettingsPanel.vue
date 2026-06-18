@@ -1,73 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useTheme } from '../composables/useTheme'
 import { useSettings } from '../composables/useSettings'
-import {
-  CurrentVersion, RepoSlug,
-  CheckForUpdate, ApplyUpdate,
-} from '../../bindings/reqost/updateservice'
+import { useUpdate } from '../composables/useUpdate'
+import { RepoSlug } from '../../bindings/reqost/updateservice'
 
 const { theme, toggle } = useTheme()
 const { settings, reset } = useSettings()
+const { version, updateInfo, applying, applied, checkError, install } = useUpdate()
 
-// ── Updates ──────────────────────────────────────────────────────────────
-const version = ref<string>('…')
 const repoSlug = ref<string>('')
-const checking = ref(false)
-const applying = ref(false)
-const checkMessage = ref<string>('')   // last status line ("up to date", "v1.2.3 available", error)
-const checkError = ref<string>('')
-const updateInfo = ref<any>(null)       // backend Info when an update is available
-const applied = ref(false)
 const showNotes = ref(false)
 
-onMounted(async () => {
-  try { version.value = await CurrentVersion() } catch { version.value = 'unknown' }
-  try { repoSlug.value = await RepoSlug() } catch { /* ignore */ }
-})
-
-async function check() {
-  checking.value = true
-  checkError.value = ''
-  checkMessage.value = ''
-  updateInfo.value = null
-  try {
-    const info: any = await CheckForUpdate()
-    if (!info) {
-      checkMessage.value = 'No release info returned.'
-      return
-    }
-    if (info.available) {
-      updateInfo.value = info
-      checkMessage.value = `Update available: ${info.latest}`
-    } else {
-      checkMessage.value = `You're on the latest version (${info.latest || version.value}).`
-    }
-  } catch (e: any) {
-    checkError.value = e?.message ?? String(e)
-  } finally {
-    checking.value = false
-  }
-}
-
-async function install() {
-  if (!updateInfo.value) return
-  applying.value = true
-  checkError.value = ''
-  try {
-    await ApplyUpdate(updateInfo.value)
-    applied.value = true
-    checkMessage.value = 'Update installed — quit and reopen reqost to use it.'
-    updateInfo.value = null
-  } catch (e: any) {
-    checkError.value = e?.message ?? String(e)
-  } finally {
-    applying.value = false
-  }
-}
+RepoSlug().then(s => { repoSlug.value = s }).catch(() => {})
 
 function openReleases() {
-  // Wails native window doesn't intercept _blank → opens in OS default browser.
   if (repoSlug.value) window.open(`https://github.com/${repoSlug.value}/releases`, '_blank')
 }
 </script>
@@ -116,25 +63,18 @@ function openReleases() {
         <label>Source</label>
         <button class="pill" @click="openReleases">{{ repoSlug }} ↗</button>
       </div>
-      <div class="upd-actions">
-        <button class="pill primary" :disabled="checking || applying" @click="check">
-          {{ checking ? 'Checking…' : 'Check for updates' }}
-        </button>
-        <button
-          v-if="updateInfo && !applied"
-          class="pill primary install"
-          :disabled="applying"
-          @click="install"
-        >{{ applying ? 'Installing…' : `Install ${updateInfo.latest}` }}</button>
-      </div>
-      <p v-if="checkMessage" class="hint">{{ checkMessage }}</p>
+      <template v-if="updateInfo && !applied">
+        <p class="hint upd-avail">↑ {{ updateInfo.latest }} available — see the title bar to install.</p>
+        <div v-if="updateInfo?.notes" class="notes-wrap">
+          <button class="link" @click="showNotes = !showNotes">
+            {{ showNotes ? 'Hide' : 'Show' }} release notes
+          </button>
+          <pre v-if="showNotes" class="notes selectable">{{ updateInfo.notes }}</pre>
+        </div>
+      </template>
+      <p v-else-if="applied" class="hint">Installed — quit and reopen reqost to use it.</p>
+      <p v-else class="hint">Updates are checked automatically on startup.</p>
       <p v-if="checkError" class="err">⚠ {{ checkError }}</p>
-      <div v-if="updateInfo?.notes" class="notes-wrap">
-        <button class="link" @click="showNotes = !showNotes">
-          {{ showNotes ? 'Hide' : 'Show' }} release notes
-        </button>
-        <pre v-if="showNotes" class="notes selectable">{{ updateInfo.notes }}</pre>
-      </div>
     </section>
 
     <section class="block">
@@ -219,12 +159,12 @@ function openReleases() {
 }
 .ghost:hover { color: var(--danger); border-color: var(--danger); }
 .ver { font: 11px monospace; color: var(--text); background: var(--bg-input); padding: 2px 6px; border-radius: 4px; }
-.upd-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .pill.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
 .pill.primary:hover:not(:disabled) { filter: brightness(1.1); }
 .pill.install { background: var(--ok); color: #06140d; }
 .pill:disabled { opacity: 0.55; cursor: default; }
 .err { font-size: 11px; color: var(--danger); line-height: 1.4; word-break: break-word; }
+.upd-avail { color: var(--ok); }
 .notes-wrap { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
 .link { align-self: flex-start; color: var(--accent); font-size: 11px; background: transparent; padding: 0; }
 .link:hover { text-decoration: underline; }

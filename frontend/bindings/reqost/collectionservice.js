@@ -121,6 +121,21 @@ export function ImportCollection(path) {
 }
 
 /**
+ * ImportFromURL fetches a URL and imports it as a Postman collection or
+ * OpenAPI/Swagger spec. It auto-detects the format from the content.
+ * The import is asynchronous; it emits the usual collection:* events.
+ * Supported URL types:
+ *   - Any direct JSON/YAML URL (GitHub raw, gist, etc.)
+ *   - Postman public share links (getpostman.com/collections/…)
+ *   - Postman API URLs with ?access_key=… or X-Api-Key header
+ * @param {string} rawURL
+ * @returns {$CancellablePromise<void>}
+ */
+export function ImportFromURL(rawURL) {
+    return $Call.ByID(1088323765, rawURL);
+}
+
+/**
  * ListRequestsUnder returns the requests at/below a node in run order. Used by
  * the Collection Runner.
  * @param {string} id
