@@ -289,6 +289,32 @@ async function onImportEnv() {
   }
 }
 
+async function onImportAllFromPostman() {
+  const apiKey = await dialog.prompt(
+    'Import all from Postman',
+    '',
+    'Postman API key',
+    { url: 'https://go.postman.co/settings/me/api-keys', label: 'Get API key at postman.co' }
+  )
+  if (!apiKey?.trim()) return
+  try {
+    await ImportAllFromPostman(apiKey.trim())
+  } catch (e) {
+    flashError('Postman import failed', e)
+  }
+}
+
+async function onClearAll() {
+  const ok = await dialog.confirm('Delete ALL items from the collection? This cannot be undone.', 'Delete All')
+  if (!ok) return
+  try {
+    await ClearAll()
+    await loadRoot()
+  } catch (e) {
+    flashError('Delete failed', e)
+  }
+}
+
 function onNodeClick(node: FlatNode) {
   if (node.type === 'folder') {
     toggleNode(node)

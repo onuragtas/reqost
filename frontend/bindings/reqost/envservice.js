@@ -4,7 +4,7 @@
 
 /**
  * EnvService exposes environment persistence to the frontend. The frontend owns
- * editing; this just loads/saves the whole document.
+ * editing; this just loads/saves the whole document and handles imports.
  * @module
  */
 
@@ -18,6 +18,7 @@ import * as envstore$0 from "./internal/envstore/models.js";
 
 /**
  * ImportEnvFromURL fetches a Postman environment JSON from a URL and imports it.
+ * Returns the imported environment name on success.
  * @param {string} rawURL
  * @returns {$CancellablePromise<string>}
  */
