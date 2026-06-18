@@ -42,9 +42,9 @@ func main() {
 		},
 	})
 
-	svc.SetEmitter(app.Event)
-	svc.SetDialog(app.Dialog)
-	wsSvc.SetEmitter(app.Event)
+	svc.setEmitter(app.Event)
+	svc.setDialog(app.Dialog)
+	wsSvc.setEmitter(app.Event)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "reqost",

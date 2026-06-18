@@ -29,7 +29,7 @@ func NewWSService() *WSService {
 	return &WSService{conns: make(map[string]*wsConn)}
 }
 
-func (s *WSService) SetEmitter(e EventEmitter) { s.emitter = e }
+func (s *WSService) setEmitter(e EventEmitter) { s.emitter = e }
 
 func (s *WSService) emit(connID, typ, dir, data string) {
 	if s.emitter != nil {

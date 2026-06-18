@@ -43,11 +43,11 @@ func NewCollectionService() (*CollectionService, error) {
 	return svc, nil
 }
 
-func (s *CollectionService) SetEmitter(e EventEmitter) {
+func (s *CollectionService) setEmitter(e EventEmitter) {
 	s.emitter = e
 }
 
-func (s *CollectionService) SetDialog(d *application.DialogManager) {
+func (s *CollectionService) setDialog(d *application.DialogManager) {
 	s.dialog = d
 }
 
