@@ -92,16 +92,30 @@ jobs:
 
       - name: Build binary
         shell: bash
+        # Mirrors the prod profile of build/{os}/Taskfile.yml:
+        #   - `production` build tag is REQUIRED — Wails v3 hides cross-platform
+        #     shims behind it; without it pkg/application drags in pkg/mac on
+        #     Linux/Windows and the build fails.
+        #   - CGO=1 on macOS+Linux (webkit linkage), CGO=0 on Windows.
+        #   - macOS deployment target 12.0 (matches the upstream Taskfile).
+        #   - Windows: `-H windowsgui` keeps a console window from spawning.
         env:
-          CGO_ENABLED: ${{ matrix.platform == 'linux' && '1' || '0' }}
           GOOS: ${{ matrix.platform }}
           GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: ${{ matrix.platform == 'windows' && '0' || '1' }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.platform == 'darwin' && '12.0' || '' }}
+          CGO_CFLAGS:  ${{ matrix.platform == 'darwin' && '-mmacosx-version-min=12.0' || '' }}
+          CGO_LDFLAGS: ${{ matrix.platform == 'darwin' && '-mmacosx-version-min=12.0' || '' }}
         run: |
           mkdir -p dist
           out="dist/reqost"
-          [[ "${{ matrix.platform }}" == "windows" ]] && out="dist/reqost.exe"
-          go build -trimpath \
-            -ldflags "-s -w -X reqost/internal/update.Version=${{ steps.ver.outputs.version }} -X reqost/internal/update.RepoSlug=${{ env.REPO_SLUG }}" \
+          extra_ldflags=""
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            out="dist/reqost.exe"
+            extra_ldflags="-H windowsgui"
+          fi
+          go build -tags production -trimpath -buildvcs=false \
+            -ldflags "-s -w $extra_ldflags -X reqost/internal/update.Version=${{ steps.ver.outputs.version }} -X reqost/internal/update.RepoSlug=${{ env.REPO_SLUG }}" \
             -o "$out" .
 
       - name: Package (unix)
