@@ -1,8 +1,8 @@
-name: Build
+name: Build & Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [master]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -15,8 +15,55 @@ env:
   REPO_SLUG: onuragtas/reqost
 
 jobs:
+  # ── 1. Auto-tag ───────────────────────────────────────────────────────────
+  # Runs only on master push / manual dispatch (not PRs).
+  # Increments the patch version, creates + pushes the tag, and exposes it
+  # to downstream jobs via outputs.version.
+  tag:
+    name: Bump version
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: next
+        run: |
+          latest=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -1)
+          if [ -z "$latest" ]; then
+            next="v1.0.0"
+          else
+            ver="${latest#v}"
+            major="${ver%%.*}"
+            rest="${ver#*.}"
+            minor="${rest%%.*}"
+            patch="${rest#*.}"
+            next="v${major}.${minor}.$((patch + 1))"
+          fi
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "Tagging as $next (previous: ${latest:-none})"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.next.outputs.tag }}"
+          git push origin "${{ steps.next.outputs.tag }}"
+
+  # ── 2. Build ─────────────────────────────────────────────────────────────
+  # Runs on every trigger (master, PR, dispatch).
+  # On master/dispatch: uses the tag from the tag job as the version.
+  # On PRs: tag job is skipped, falls back to dev-<sha>.
   build:
     name: Build (${{ matrix.platform }}/${{ matrix.arch }})
+    needs: [tag]
+    if: ${{ always() && !cancelled() }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -66,10 +113,6 @@ jobs:
       - name: Install frontend deps
         working-directory: frontend
         shell: bash
-        # `npm ci` is strict about lockfile sync. If a lockfile/package.json
-        # drift slips through (e.g. an optional native dep regenerated under a
-        # different Node version), fall back to `npm install` so the CI run
-        # still produces a binary instead of failing on lockfile bookkeeping.
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
       - name: Generate Wails bindings
@@ -83,21 +126,14 @@ jobs:
         id: ver
         shell: bash
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          ver="${{ needs.tag.outputs.version }}"
+          if [ -z "$ver" ]; then
+            ver="dev-${GITHUB_SHA::7}"
           fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
         shell: bash
-        # Mirrors the prod profile of build/{os}/Taskfile.yml:
-        #   - `production` build tag is REQUIRED — Wails v3 hides cross-platform
-        #     shims behind it; without it pkg/application drags in pkg/mac on
-        #     Linux/Windows and the build fails.
-        #   - CGO=1 on macOS+Linux (webkit linkage), CGO=0 on Windows.
-        #   - macOS deployment target 12.0 (matches the upstream Taskfile).
-        #   - Windows: `-H windowsgui` keeps a console window from spawning.
         env:
           GOOS: ${{ matrix.platform }}
           GOARCH: ${{ matrix.arch }}
@@ -106,7 +142,6 @@ jobs:
           CGO_CFLAGS:  ${{ matrix.platform == 'darwin' && '-mmacosx-version-min=12.0' || '' }}
           CGO_LDFLAGS: ${{ matrix.platform == 'darwin' && '-mmacosx-version-min=12.0' || '' }}
         run: |
-          # Cross-compile darwin/amd64 on the arm64 runner using the macOS SDK
           if [[ "${{ matrix.platform }}" == "darwin" && "${{ matrix.arch }}" == "amd64" ]]; then
             SDK="$(xcrun --sdk macosx --show-sdk-path)"
             export CC="clang -arch x86_64 -isysroot $SDK"
@@ -157,10 +192,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # ── 3. Release ────────────────────────────────────────────────────────────
+  # Only runs when the tag job succeeded (master push / dispatch).
   release:
     name: Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tag, build]
+    if: needs.tag.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -175,10 +212,11 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.tag.outputs.version }}
           files: |
             dist/*.tar.gz
             dist/*.zip
             dist/*.sha256
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(needs.tag.outputs.version, '-') }}
