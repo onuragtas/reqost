@@ -56,7 +56,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
 	id UNINDEXED,
 	name,
 	url,
-	body
+	body,
+	tokenize='unicode61 remove_diacritics 2'
 );
 `
 
@@ -90,6 +91,9 @@ func OpenAt(path string) (*DB, error) {
 
 // migrate adds columns introduced after the initial schema to pre-existing
 // databases. ALTER TABLE ADD COLUMN errors (duplicate column) are ignored.
+//
+// Versioned migrations (steps that can't be a simple ALTER) are gated by
+// `PRAGMA user_version` so they run exactly once per DB.
 func migrate(conn *sql.DB) {
 	for _, stmt := range []string{
 		`ALTER TABLE detail ADD COLUMN body_type TEXT NOT NULL DEFAULT ''`,
@@ -102,6 +106,65 @@ func migrate(conn *sql.DB) {
 		`ALTER TABLE tree ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'`,
 	} {
 		_, _ = conn.Exec(stmt) // ignore "duplicate column name"
+	}
+
+	var version int
+	_ = conn.QueryRow(`PRAGMA user_version`).Scan(&version)
+
+	// v1: rebuild search_fts with unicode61 + diacritic-folding tokenizer so
+	// Turkish queries like "yapı" match "YAPI" and search_fts MATCH is
+	// case-insensitive across the full Unicode range. Old FTS5 tables can't
+	// change their tokenizer in place — drop + recreate + re-index from
+	// (tree, detail) is the only path.
+	if version < 1 {
+		if _, err := conn.Exec(`DROP TABLE IF EXISTS search_fts`); err != nil {
+			log.Default().Printf("fts migration v1 drop: %v", err)
+			return
+		}
+		if _, err := conn.Exec(`CREATE VIRTUAL TABLE search_fts USING fts5(
+			id UNINDEXED, name, url, body,
+			tokenize='unicode61 remove_diacritics 2'
+		)`); err != nil {
+			log.Default().Printf("fts migration v1 create: %v", err)
+			return
+		}
+		// Re-index every existing row through indexable() so Turkish-folded
+		// twins land in the freshly-built FTS table. Streaming the rows in Go
+		// (rather than a single INSERT … SELECT) is what lets us call the
+		// helper per-field.
+		rows, err := conn.Query(`
+			SELECT t.id, t.name, COALESCE(d.url, ''), COALESCE(d.body, '')
+			FROM tree t LEFT JOIN detail d ON t.id = d.id`)
+		if err != nil {
+			log.Default().Printf("fts migration v1 read: %v", err)
+			return
+		}
+		type row struct{ id, name, url, body string }
+		var all []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.id, &r.name, &r.url, &r.body); err != nil {
+				rows.Close()
+				log.Default().Printf("fts migration v1 scan: %v", err)
+				return
+			}
+			all = append(all, r)
+		}
+		rows.Close()
+		for _, r := range all {
+			if _, err := conn.Exec(
+				`INSERT INTO search_fts (id, name, url, body) VALUES (?, ?, ?, ?)`,
+				r.id, indexable(r.name), indexable(r.url), indexable(r.body),
+			); err != nil {
+				log.Default().Printf("fts migration v1 reindex %s: %v", r.id, err)
+				return
+			}
+		}
+		if _, err := conn.Exec(`PRAGMA user_version = 1`); err != nil {
+			log.Default().Printf("fts migration v1 set version: %v", err)
+			return
+		}
+		log.Default().Printf("fts migration v1 done — rebuilt search_fts (unicode61 + TR folding), reindexed %d rows", len(all))
 	}
 }
 
@@ -190,7 +253,7 @@ func (db *DB) MergeItems(items []collection.FlatItem) error {
 				if _, err := ftsDelete.Exec(item.ID); err != nil {
 					return fmt.Errorf("fts delete %s: %w", item.ID, err)
 				}
-				if _, err := ftsInsert.Exec(item.ID, item.Name, prev.url, prev.body); err != nil {
+				if _, err := ftsInsert.Exec(item.ID, indexable(item.Name), indexable(prev.url), indexable(prev.body)); err != nil {
 					return fmt.Errorf("fts insert %s: %w", item.ID, err)
 				}
 			}
@@ -209,7 +272,7 @@ func (db *DB) MergeItems(items []collection.FlatItem) error {
 				return fmt.Errorf("insert detail %s: %w", item.ID, err)
 			}
 		}
-		if _, err := ftsInsert.Exec(item.ID, item.Name, item.URL, item.Body); err != nil {
+		if _, err := ftsInsert.Exec(item.ID, indexable(item.Name), indexable(item.URL), indexable(item.Body)); err != nil {
 			return fmt.Errorf("insert fts %s: %w", item.ID, err)
 		}
 	}
@@ -331,7 +394,7 @@ func (db *DB) ImportItems(path string, mtime int64, items []collection.FlatItem)
 				if _, err := ftsDelete.Exec(item.ID); err != nil {
 					return fmt.Errorf("refresh fts %s: %w", item.ID, err)
 				}
-				if _, err := ftsInsert.Exec(item.ID, item.Name, prev.url, prev.body); err != nil {
+				if _, err := ftsInsert.Exec(item.ID, indexable(item.Name), indexable(prev.url), indexable(prev.body)); err != nil {
 					return fmt.Errorf("refresh fts %s: %w", item.ID, err)
 				}
 			}
@@ -352,7 +415,7 @@ func (db *DB) ImportItems(path string, mtime int64, items []collection.FlatItem)
 				return fmt.Errorf("insert detail %s: %w", item.ID, err)
 			}
 		}
-		if _, err := ftsInsert.Exec(item.ID, item.Name, item.URL, item.Body); err != nil {
+		if _, err := ftsInsert.Exec(item.ID, indexable(item.Name), indexable(item.URL), indexable(item.Body)); err != nil {
 			return fmt.Errorf("insert fts %s: %w", item.ID, err)
 		}
 	}

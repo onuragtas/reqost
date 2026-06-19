@@ -98,3 +98,80 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] Workspace dropdown'unda "Bind to Git directory…" — `Init+Export+Commit` tek tıkla
 - [ ] Status badge (uncommitted değişiklik var mı)
 - [ ] Branches modal — switch / new branch
+
+## F — Küçük UX gap'leri (Postman/Insomnia paritesinde sıkça farkedilenler)
+
+Çekirdek parite kapandı, ama gündelik kullanımda gözüne batan ufak "yok"lar. Birikti — sıraladım, kolay→orta efor sırasıyla.
+
+### Search / Navigation
+- [x] **Cmd+F response body içinde arama** — Pretty/Raw artık `EditorPane` (CodeMirror) → built-in search keymap çalışır. JSON tree mode'da zaten filter input vardı.
+- [ ] **Cmd+F response headers içinde arama** — headers şu an plain `<div>`. Headers'i de küçük bir filter input + match highlight ile sar.
+- [ ] **Cmd+F request body / scripts içinde arama** — EditorPane geçince geldi ✓ (CodeMirror built-in). Settings'te shortcut listesinde belirt.
+- [ ] **Sidebar tree içinde fuzzy filter (filter expansion preserve)** — şu anki search FTS5 ile yapıyor ama tree expansion'ı bozuyor; "filter" modu eklemek (expand'leri koru, sadece eşleşmeyenleri gizle).
+
+### Tabs
+- [ ] **Tab reorder via drag** — TabBar drag-drop ile tab sırasını değiştir.
+- [ ] **Tab pin** (sağ-tık → Pin). Pinned tab'lar dirty-check'siz korunur.
+- [ ] **Right-click tab → Close All / Close Others / Close to the Right**.
+- [ ] **Tab tooltip → full URL + method** (uzun adlarda hangi request olduğunu görmek).
+- [ ] **Drag URL onto tab bar / workbench → openAdhoc** (browser address bar pattern).
+
+### Response panel
+- [ ] **Copy response body** (button, tek tık → clipboard).
+- [ ] **Download response body** (`Save…` button, response'u dosyaya yaz; binary için kritik).
+- [ ] **Response image preview** — `Content-Type: image/*` ise base64 inline preview.
+- [ ] **Response HTML preview** — sandboxed iframe (no JS).
+- [ ] **Response size warning** — >10 MiB altında küçük bir "truncated at 50 MiB" badge'i şu an silent.
+- [ ] **JSON path picker** — Tree view'da bir node'a tıkla → JSONPath (`$.user.items[0].id`) kopyala. Reqost'taki request chaining syntax'ı ile uyumlu olacak şekilde.
+- [ ] **Test result expand** — bir test'i tıklayınca `actual` vs `expected` diff göster.
+- [ ] **Console clear / filter (errors only / search)** — şu an her şey akıyor.
+
+### Request panel
+- [ ] **Send & Save** (Cmd+Shift+Enter), **Send & Download** (response → file).
+- [ ] **Pre-request "Try" / Test script "Try"** — gerçek request yollamadan sadece scripti çalıştır (hızlı debug).
+- [ ] **Path variables editor** (Postman pattern): URL `/users/:id` veya `/users/{id}` yazınca otomatik bir Path Variables alt-sekmesi.
+- [ ] **Per-tab variable override** — bir request için sadece o tab içinde aktif environment override.
+- [ ] **Body line-wrap toggle** — CodeMirror default wrap'i kapatma seçeneği uzun JSON için.
+- [ ] **Recent URLs autocomplete** — URL bar'a yazarken history'den fuzzy öner.
+- [ ] **Request → "Reset to last save"** — dirty edit'i geri al.
+
+### Sidebar / collection
+- [ ] **Item "Copy ID"** — sağ-tık menüsüne ekle (chaining ref yazarken faydalı).
+- [ ] **"Move to workspace…"** — sağ-tık menüsünde target workspace seç.
+- [ ] **Sidebar collapse to icon-only** — daha geniş workbench için.
+
+### Settings / theme
+- [ ] **System theme follow** — şu an light/dark var, OS preference takip yok.
+- [ ] **Font size + family setting** — accessibility + retina dışı ekranlar.
+- [ ] **Keyboard shortcuts cheat sheet** — Settings'te modal: "Cmd+K palette, Cmd+P quick switch, Cmd+Enter send, …".
+- [ ] **Workspace export/import** — tüm workspace'i .zip'e (collection.json + environments.json + plugins/) + geri yükleme.
+
+### Network / protocol
+- [ ] **SOCKS5 proxy** — şu an sadece HTTP/HTTPS. `http.Transport.DialContext` ile ekle.
+- [ ] **Custom CA trust** — kurumsal kurumlarda sık. `x509.SystemCertPool()` + ek root cert path.
+- [ ] **Request retry button** (failed response'tan sonra direkt yeniden gönder).
+- [ ] **Send timing history graph per request** — küçük sparkline son 10 send'in `totalMs`'i.
+- [ ] **Response truncation banner** — 50 MiB cap'e çarpınca silent → görünür mesaj.
+
+### Editor / coding ergonomics
+- [ ] **JSON inline validation** — CodeMirror linter ile error squiggle (lang-json zaten parse ediyor, sadece lint extension ekle).
+- [ ] **Body "Format JSON" / "Minify" button**.
+- [ ] **XML/HTML pretty button** for response.
+- [ ] **Snippets / templates** — kullanıcının kayıtlı snippet'leri body'e dropdown ile.
+
+### Plugin ecosystem
+- [ ] **Plugin marketplace stub** — Settings'te "Discover plugins" listesi (placeholder, GitHub topic ile).
+- [ ] **Plugin `console.log` → in-app console** — şu an goja'nın stdout'una gidiyor, görünmez.
+- [ ] **Plugin permission model** — `manifest.json` ile network/fs/timer izinleri.
+
+### Mock / Design
+- [ ] **Mock server log panel** — gelen request'leri DesignPanel altında listele.
+- [ ] **Mock server CORS headers default-on** — frontend dev için ön gereksinim.
+- [ ] **OpenAPI spec validation** — kaydetmeden önce sözdizimi hataları işaretle.
+
+### CI / build / release
+- [ ] **CI'a `go test` + `go vet` + `vue-tsc` adımları**.
+- [ ] **`v*` manuel tag push'unda release açan ayrı job**.
+- [ ] **Universal macOS binary** (arm64+amd64 lipo).
+- [ ] **AppImage (Linux), .pkg (macOS), MSI (Windows)** native installer'lar.
+- [ ] **macOS notarize, Windows code sign**.

@@ -19,13 +19,36 @@ func NewID() string {
 	return "rq-" + hex.EncodeToString(b[:])
 }
 
-// reindexFTS rewrites the FTS row for one node.
+// reindexFTS rewrites the FTS row for one node. Every text field is stored
+// alongside its ASCII-folded twin (see normalizeForSearch) so the user can
+// type "yapı" OR "yapi" OR "YAPI" and get the same hits.
 func reindexFTS(tx *sql.Tx, id, name, url, body string) error {
 	if _, err := tx.Exec("DELETE FROM search_fts WHERE id = ?", id); err != nil {
 		return err
 	}
-	_, err := tx.Exec("INSERT INTO search_fts (id, name, url, body) VALUES (?, ?, ?, ?)", id, name, url, body)
+	_, err := tx.Exec(
+		"INSERT INTO search_fts (id, name, url, body) VALUES (?, ?, ?, ?)",
+		id,
+		indexable(name),
+		indexable(url),
+		indexable(body),
+	)
 	return err
+}
+
+// indexable returns the value we actually write into search_fts: the original
+// plus an ASCII-folded copy, separated by a space. FTS5 tokenizes whitespace
+// so the two halves become independent searchable tokens — searches against
+// the original text still hit (turkish letters intact), AND searches against
+// the folded text also hit.
+func indexable(s string) string {
+	folded := normalizeForSearch(s)
+	if folded == strings.ToLower(s) {
+		// No Turkish-specific folding happened; storing twice would just bloat
+		// the index for plain ASCII content.
+		return s
+	}
+	return s + " " + folded
 }
 
 // SaveRequest persists edits to an existing request: tree (name/method),

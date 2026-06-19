@@ -6,7 +6,7 @@ import {
   defaultHighlightStyle, syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search'
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, type CompletionContext } from '@codemirror/autocomplete'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
@@ -120,6 +120,11 @@ onMounted(() => {
       indentOnInput(),
       autocompletion({ override: [varCompletionSource] }),
       varHighlightPlugin,
+      // `top: true` floats the panel above the editor (looks like a modal
+      // overlay instead of squeezing the gutter).
+      // `caseSensitive: false`, `regexp: false` are the defaults — keep them
+      // explicit so an upstream change can't flip them on us.
+      search({ top: true, caseSensitive: false, regexp: false, wholeWord: false }),
       highlightSelectionMatches(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       keymap.of([
@@ -134,10 +139,119 @@ onMounted(() => {
       langCompartment.of(languageExt(props.language)),
       readonlyCompartment.of(EditorState.readOnly.of(props.readonly)),
       EditorView.theme({
-        '&':            { fontFamily: 'monospace', fontSize: '12px' },
+        '&':            { fontFamily: 'monospace', fontSize: '12px', backgroundColor: 'transparent' },
         '.cm-scroller': { lineHeight: '1.5' },
-        '.cm-content':  { padding: '6px 0' },
-        '.cm-gutters':  { background: 'transparent', borderRight: '1px solid var(--border)' },
+        '.cm-content':  { padding: '6px 0', caretColor: 'var(--accent)' },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
+        '.cm-gutters':  { background: 'transparent', borderRight: '1px solid var(--border)', color: 'var(--text-faint)' },
+        '.cm-activeLine, .cm-activeLineGutter': {
+          backgroundColor: 'color-mix(in srgb, var(--accent) 6%, transparent)',
+        },
+        '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
+          backgroundColor: 'color-mix(in srgb, var(--accent) 32%, transparent) !important',
+        },
+        '.cm-searchMatch': {
+          backgroundColor: 'color-mix(in srgb, var(--warn-text) 35%, transparent)',
+          outline: '1px solid color-mix(in srgb, var(--warn-text) 60%, transparent)',
+        },
+        '.cm-searchMatch-selected': {
+          backgroundColor: 'color-mix(in srgb, var(--accent) 50%, transparent)',
+          outline: '1px solid var(--accent)',
+        },
+        '.cm-selectionMatch': {
+          backgroundColor: 'color-mix(in srgb, var(--accent) 22%, transparent)',
+        },
+        // ── Search / find panel ──
+        '.cm-panels': {
+          backgroundColor: 'var(--bg-elevated)',
+          color: 'var(--text)',
+          border: '0',
+          borderTop: '1px solid var(--border)',
+        },
+        '.cm-panels-top': { borderTop: '0', borderBottom: '1px solid var(--border)' },
+        '.cm-panel.cm-search': {
+          background: 'var(--bg-elevated)',
+          padding: '8px 10px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '6px',
+          fontFamily: 'inherit',
+        },
+        '.cm-panel.cm-search label': {
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: '11px',
+          color: 'var(--text-dim)',
+          cursor: 'pointer',
+          padding: '2px 4px',
+          borderRadius: '3px',
+        },
+        '.cm-panel.cm-search label:hover': { color: 'var(--text)' },
+        '.cm-panel.cm-search label input[type=checkbox]': {
+          accentColor: 'var(--accent)',
+          margin: '0 2px 0 0',
+        },
+        '.cm-panel.cm-search input[type=text], .cm-textfield': {
+          background: 'var(--bg-input)',
+          color: 'var(--text)',
+          border: '1px solid var(--border-strong)',
+          borderRadius: '5px',
+          padding: '5px 9px',
+          font: '12px monospace',
+          minWidth: '180px',
+          outline: 'none',
+        },
+        '.cm-panel.cm-search input[type=text]:focus, .cm-textfield:focus': {
+          borderColor: 'var(--accent)',
+          boxShadow: '0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent)',
+        },
+        '.cm-panel.cm-search button, .cm-button': {
+          background: 'var(--bg-input)',
+          color: 'var(--text-dim)',
+          border: '1px solid var(--border-strong)',
+          borderRadius: '5px',
+          padding: '4px 10px',
+          font: '11px sans-serif',
+          textTransform: 'none',
+          cursor: 'pointer',
+          backgroundImage: 'none',
+        },
+        '.cm-panel.cm-search button:hover, .cm-button:hover': {
+          background: 'var(--bg-hover)',
+          color: 'var(--text)',
+          borderColor: 'var(--accent)',
+        },
+        '.cm-panel.cm-search button[name=close]': {
+          marginLeft: 'auto',
+          color: 'var(--text-faint)',
+          background: 'transparent',
+          border: '0',
+          fontSize: '15px',
+          padding: '2px 6px',
+          lineHeight: '1',
+        },
+        '.cm-panel.cm-search button[name=close]:hover': { color: 'var(--danger)' },
+        // ── Autocomplete tooltip ──
+        '.cm-tooltip.cm-tooltip-autocomplete': {
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-strong)',
+          borderRadius: '6px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+          color: 'var(--text)',
+        },
+        '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
+          padding: '4px 10px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+        },
+        '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+          background: 'var(--bg-hover)',
+          color: 'var(--text)',
+        },
+        '.cm-completionLabel': { color: 'var(--accent)' },
+        '.cm-completionDetail': { color: 'var(--text-faint)', fontStyle: 'normal', marginLeft: '8px' },
       }),
       EditorView.updateListener.of(u => {
         if (!u.docChanged || suppressUpdate) return

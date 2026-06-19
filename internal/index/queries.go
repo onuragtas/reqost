@@ -3,6 +3,8 @@ package index
 import (
 	"database/sql"
 	"fmt"
+	"strings"
+	"unicode"
 )
 
 type TreeNode struct {
@@ -57,7 +59,8 @@ func (db *DB) GetChildren(parentID string) ([]TreeNode, error) {
 }
 
 func (db *DB) Search(query string) ([]TreeNode, error) {
-	if query == "" {
+	fts := buildFTSQuery(query)
+	if fts == "" {
 		return []TreeNode{}, nil
 	}
 	rows, err := db.conn.Query(`
@@ -67,12 +70,77 @@ func (db *DB) Search(query string) ([]TreeNode, error) {
 		JOIN tree t ON t.id = f.id
 		WHERE search_fts MATCH ?
 		ORDER BY rank
-		LIMIT 300`, query)
+		LIMIT 300`, fts)
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
 	defer rows.Close()
 	return scanNodes(rows)
+}
+
+// buildFTSQuery turns user input into a safe FTS5 MATCH expression.
+//
+//   - Punctuation that isn't part of an identifier is stripped (so the user
+//     can type "YAPI ve KREDİ BANKASI A.Ş." and we don't try to send the dots
+//     and the period as FTS5 syntax).
+//   - Every character is run through normalizeForSearch — Turkish letters
+//     fold to ASCII (İ/I/ı → i, ş → s, ğ → g, ç → c, ö → o, ü → u) so the
+//     query lines up with what we stored in search_fts. SQLite's unicode61
+//     tokenizer does NOT fold ı→i on its own; the dotless i isn't classified
+//     as a diacritic.
+//   - Each remaining token gets a trailing `*` for prefix match — so typing
+//     "yapı" finds "YAPI KREDI", "kred" finds "kredi", etc.
+//   - Tokens are AND-joined so multi-word searches narrow as expected.
+func buildFTSQuery(input string) string {
+	folded := normalizeForSearch(input)
+	var b strings.Builder
+	for _, r := range folded {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r):
+			b.WriteRune(r)
+		default:
+			b.WriteRune(' ')
+		}
+	}
+	tokens := strings.Fields(b.String())
+	if len(tokens) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		// FTS5 prefix syntax: `bareword*`. Bareword must be alphanumeric, no
+		// quotes. We already stripped everything else, so `t` is safe to drop in.
+		parts = append(parts, t+"*")
+	}
+	return strings.Join(parts, " AND ")
+}
+
+// normalizeForSearch lower-cases the input and ASCII-folds the handful of
+// Turkish letters the standard Unicode case-folding tables miss. This runs
+// both at index time (so "YAPI" goes into search_fts as "yapi") and at query
+// time (so "yapı" also becomes "yapi"), keeping the two sides aligned.
+func normalizeForSearch(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case 'ı', 'I', 'İ':
+			b.WriteRune('i')
+		case 'ş', 'Ş':
+			b.WriteRune('s')
+		case 'ğ', 'Ğ':
+			b.WriteRune('g')
+		case 'ç', 'Ç':
+			b.WriteRune('c')
+		case 'ö', 'Ö':
+			b.WriteRune('o')
+		case 'ü', 'Ü':
+			b.WriteRune('u')
+		default:
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+	return b.String()
 }
 
 // RequestsUnder returns every request node at or below rootID (empty == whole

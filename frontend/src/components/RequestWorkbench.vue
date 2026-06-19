@@ -955,8 +955,19 @@ function onSetVerifySSL(s: string) {
                 >Tree</button>
               </div>
               <JsonTree v-if="bodyView === 'tree' && canTree" :value="bodyJSON" />
-              <pre v-else-if="bodyView === 'pretty'" class="res-body selectable">{{ prettyBody }}</pre>
-              <pre v-else class="res-body selectable">{{ active.response.body }}</pre>
+              <EditorPane
+                v-else-if="bodyView === 'pretty'"
+                :model-value="prettyBody"
+                :language="canTree ? 'json' : 'plain'"
+                readonly min-height="100%"
+                @update:model-value="() => {}"
+              />
+              <EditorPane
+                v-else
+                :model-value="active.response.body"
+                language="plain" readonly min-height="100%"
+                @update:model-value="() => {}"
+              />
             </template>
             <div v-else-if="active.resSubTab === 'headers'" class="res-headers selectable">
               <div v-for="(h, i) in active.response.headers" :key="i" class="rh">
