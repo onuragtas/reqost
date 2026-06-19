@@ -354,14 +354,15 @@ func (s *CollectionService) reimport(path string) {
 		return
 	}
 
-	if err := s.db.ImportItems(path, currentMtime, items); err != nil {
+	// MergeItems upserts without deleting — so items imported from other sources
+	// (Postman API, OpenAPI) are not wiped when a local file is imported.
+	if err := s.db.MergeItems(items); err != nil {
 		s.emit("collection:error", fmt.Sprintf("index: %v", err))
 		return
 	}
-
-	// The SQLite index is the source of truth (edits are written to it, not the
-	// file), so we intentionally do NOT auto-watch the file for re-import — that
-	// would clobber user edits. Import is a deliberate, user-initiated replace.
+	if err := s.db.SetMtime(path, currentMtime); err != nil {
+		log.Printf("set mtime %s: %v", path, err)
+	}
 
 	if len(vars) > 0 && s.envSvc != nil {
 		s.envSvc.mergeCollectionVars(path, vars)
@@ -440,7 +441,7 @@ func (s *CollectionService) ImportFromURL(rawURL string) error {
 		// Try Postman collection (JSON only).
 		if !isYAML {
 			if items, vars, err := collection.ParseBytes(body); err == nil && len(items) > 0 {
-				if err := s.db.ImportItems(rawURL, 0, items); err != nil {
+				if err := s.db.MergeItems(items); err != nil {
 					s.emit("collection:error", fmt.Sprintf("index collection: %v", err))
 					return
 				}

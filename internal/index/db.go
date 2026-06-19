@@ -131,6 +131,91 @@ func (db *DB) GetMtime(path string) (int64, error) {
 	return mtime, err
 }
 
+func (db *DB) SetMtime(path string, mtime int64) error {
+	_, err := db.conn.Exec("INSERT OR REPLACE INTO meta (path, mtime) VALUES (?, ?)", path, mtime)
+	return err
+}
+
+// MergeItems upserts items into the index without deleting anything — unlike
+// ImportItems which removes nodes absent from the new parse. Use this when
+// importing from multiple sources (Postman API + local file) so items from
+// one source are not wiped by another. Existing tree rows are updated (name,
+// parent, method, sort_order); detail rows are left intact so user edits
+// survive re-imports; FTS is refreshed when the name changes.
+func (db *DB) MergeItems(items []collection.FlatItem) error {
+	type existingRow struct{ name, url, body string }
+	existing := map[string]existingRow{}
+	rows, err := db.conn.Query(`
+		SELECT t.id, t.name, COALESCE(d.url,''), COALESCE(d.body,'')
+		FROM tree t LEFT JOIN detail d ON t.id = d.id`)
+	if err != nil {
+		return fmt.Errorf("read existing: %w", err)
+	}
+	for rows.Next() {
+		var id string
+		var r existingRow
+		if err := rows.Scan(&id, &r.name, &r.url, &r.body); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[id] = r
+	}
+	rows.Close()
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	treeInsert, _ := tx.Prepare(`INSERT INTO tree (id, name, parent_id, type, method, sort_order) VALUES (?, ?, ?, ?, ?, ?)`)
+	defer treeInsert.Close()
+	treeUpdate, _ := tx.Prepare(`UPDATE tree SET name=?, parent_id=?, type=?, method=?, sort_order=? WHERE id=?`)
+	defer treeUpdate.Close()
+	detailInsert, _ := tx.Prepare(`INSERT INTO detail (id, url, headers_json, body, pre_script, post_script, description, body_type, form_fields, graphql_vars, auth_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	defer detailInsert.Close()
+	ftsDelete, _ := tx.Prepare(`DELETE FROM search_fts WHERE id=?`)
+	defer ftsDelete.Close()
+	ftsInsert, _ := tx.Prepare(`INSERT INTO search_fts (id, name, url, body) VALUES (?, ?, ?, ?)`)
+	defer ftsInsert.Close()
+
+	for _, item := range items {
+		parentID := nullStr(item.ParentID)
+		prev, isExisting := existing[item.ID]
+		if isExisting {
+			if _, err := treeUpdate.Exec(item.Name, parentID, item.Type, item.Method, item.SortOrder, item.ID); err != nil {
+				return fmt.Errorf("update tree %s: %w", item.ID, err)
+			}
+			if prev.name != item.Name {
+				if _, err := ftsDelete.Exec(item.ID); err != nil {
+					return fmt.Errorf("fts delete %s: %w", item.ID, err)
+				}
+				if _, err := ftsInsert.Exec(item.ID, item.Name, prev.url, prev.body); err != nil {
+					return fmt.Errorf("fts insert %s: %w", item.ID, err)
+				}
+			}
+			continue
+		}
+		if _, err := treeInsert.Exec(item.ID, item.Name, parentID, item.Type, item.Method, item.SortOrder); err != nil {
+			return fmt.Errorf("insert tree %s: %w", item.ID, err)
+		}
+		if item.Type == "request" {
+			ff := item.FormFields
+			if ff == "" {
+				ff = "[]"
+			}
+			if _, err := detailInsert.Exec(item.ID, item.URL, nonEmptyJSON(item.HeadersJSON), item.Body,
+				item.PreScript, item.PostScript, item.Description, item.BodyType, ff, item.GraphqlVars, item.AuthJSON); err != nil {
+				return fmt.Errorf("insert detail %s: %w", item.ID, err)
+			}
+		}
+		if _, err := ftsInsert.Exec(item.ID, item.Name, item.URL, item.Body); err != nil {
+			return fmt.Errorf("insert fts %s: %w", item.ID, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // ImportItems merges a fresh parse into the index incrementally:
 //   - Nodes present only in the existing index are deleted (with their detail
 //     + FTS rows).
