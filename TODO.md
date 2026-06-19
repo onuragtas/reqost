@@ -330,11 +330,11 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Workspace-level secrets store** (vault, OS keychain backed).
 
 ### G16 · Git sync UI
-- [ ] **"Bind to Git directory…"** workspace dropdown'unda.
-- [ ] **Status badge** (uncommitted değişiklik var mı).
-- [ ] **Branches modal** — switch / new branch.
-- [ ] **Commit modal** — diff preview + message + amend.
-- [ ] **Pull / push UI** (göstergeli).
+- [x] **"Bind to Git directory…"** workspace dropdown'unda — her workspace satırında ⎇ butonu.
+- [x] **Status badge** — title bar'da `branch · N change(s)` (clean: yeşil, dirty: turuncu).
+- [x] **Branches modal** — switch dropdown'u + "+ New branch".
+- [x] **Snapshot & commit** — Export + Commit tek tıkla; ayrı "Commit current tree".
+- [ ] **Pull / push UI** (henüz manual: `git pull/push` terminalden).
 - [ ] **Conflict UI** (3-way merge collection.json üzerinde).
 
 ### G17 · Network detay

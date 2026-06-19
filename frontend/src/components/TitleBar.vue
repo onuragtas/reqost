@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useUpdate } from '../composables/useUpdate'
 import {
   ListWorkspaces, ActiveWorkspaceID, SwitchWorkspace, CreateWorkspace, RenameWorkspace, DeleteWorkspace,
 } from '../../bindings/reqost/collectionservice'
+import { Status as GitStatus } from '../../bindings/reqost/gitservice'
 import { useDialog } from '../composables/useDialog'
+import { useGitBind } from '../composables/useGitBind'
+import GitModal from './GitModal.vue'
 
 const { version, updateInfo, applying, applied, checkError, autoCheck, install } = useUpdate()
 const dialog = useDialog()
@@ -14,11 +17,49 @@ const showWs = ref(false)
 const workspaces = ref<any[]>([])
 const activeWs = ref<string>('')
 
+const { get: getGitBind, all: gitBinds } = useGitBind()
+const showGit = ref(false)
+const gitTargetWsId = ref<string>('')
+const gitTargetWsName = ref<string>('')
+
+// Status badge for the active workspace's bound repo (if any). Lazy — only
+// refreshes when something changes hands. Empty string = no badge.
+const gitBadgeText = ref<string>('')
+const gitBadgeColor = ref<'clean' | 'dirty' | 'unbound'>('unbound')
+
+async function refreshGitBadge() {
+  const path = activeWs.value ? getGitBind(activeWs.value) : ''
+  if (!path) { gitBadgeText.value = ''; gitBadgeColor.value = 'unbound'; return }
+  try {
+    const st: any = await GitStatus(path)
+    if (!st?.hasRepo) { gitBadgeText.value = 'no repo'; gitBadgeColor.value = 'dirty'; return }
+    const changes = (st.status ?? '').split('\n').filter((l: string) => l.trim()).length
+    gitBadgeText.value = `${st.branch || 'detached'}${changes ? ` · ${changes}` : ''}`
+    gitBadgeColor.value = changes ? 'dirty' : 'clean'
+  } catch {
+    gitBadgeText.value = 'git error'; gitBadgeColor.value = 'dirty'
+  }
+}
+
 async function loadWorkspaces() {
   try {
     workspaces.value = await ListWorkspaces() ?? []
     activeWs.value = await ActiveWorkspaceID() ?? ''
+    await refreshGitBadge()
   } catch { /* keep last */ }
+}
+
+function openGit(wsId: string, wsName: string) {
+  gitTargetWsId.value = wsId
+  gitTargetWsName.value = wsName
+  showGit.value = true
+  showWs.value = false
+}
+
+function isBound(wsId: string) { return !!gitBinds[wsId] }
+async function onGitModalClose() {
+  showGit.value = false
+  await refreshGitBadge()
 }
 async function pickWs(id: string) {
   if (id === activeWs.value) { showWs.value = false; return }
@@ -63,6 +104,12 @@ async function onInstall() {
       <button class="ws-pill" @click.stop="showWs = !showWs">
         ⌘ {{ activeWsName() }} ▾
       </button>
+      <button
+        v-if="gitBadgeText"
+        class="git-badge" :class="gitBadgeColor"
+        :title="`Git: ${gitBadgeText}`"
+        @click.stop="openGit(activeWs, activeWsName())"
+      >⎇ {{ gitBadgeText }}</button>
       <div v-if="showWs" class="ws-menu" @click.stop>
         <div class="ws-head">Workspaces</div>
         <div
@@ -74,6 +121,11 @@ async function onInstall() {
           @keydown.space.prevent="pickWs(w.id)"
         >
           <span class="ws-name">{{ w.name }}</span>
+          <button
+            class="ws-act git" :class="{ bound: isBound(w.id) }"
+            :title="isBound(w.id) ? 'Git settings' : 'Bind to Git…'"
+            @click.stop="openGit(w.id, w.name)"
+          >⎇</button>
           <button class="ws-act" title="Rename" @click.stop="renameWs(w.id, w.name)">✎</button>
           <button v-if="workspaces.length > 1" class="ws-act danger" title="Delete" @click.stop="delWs(w.id)">✕</button>
         </div>
@@ -107,6 +159,13 @@ async function onInstall() {
 
     <!-- click-outside dismiss -->
     <div v-if="showPopover || showWs" class="backdrop" @click="showPopover = false; showWs = false" />
+
+    <GitModal
+      :open="showGit"
+      :workspace-id="gitTargetWsId"
+      :workspace-name="gitTargetWsName"
+      @close="onGitModalClose"
+    />
   </div>
 </template>
 
@@ -227,6 +286,22 @@ async function onInstall() {
   border-radius: 12px; color: var(--text-dim); font-size: 11px; padding: 3px 10px;
 }
 .ws-pill:hover { color: var(--text); }
+.git-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px; padding: 3px 9px; border-radius: 10px;
+  font: 600 10px monospace;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+}
+.git-badge.clean   { color: var(--ok);        border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.git-badge.dirty   { color: var(--warn-text); border-color: color-mix(in srgb, var(--warn-text) 50%, transparent); }
+.git-badge.unbound { display: none; }
+.git-badge:hover { filter: brightness(1.15); }
+
+.ws-act.git { color: var(--text-faint); font-weight: 700; }
+.ws-act.git.bound { color: var(--accent); }
+.ws-act.git:hover { color: var(--accent); }
 .ws-menu {
   position: absolute; top: calc(100% + 6px); left: 0; min-width: 220px;
   background: var(--bg-panel); border: 1px solid var(--border-strong);
