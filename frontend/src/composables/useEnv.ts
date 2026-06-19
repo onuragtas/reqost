@@ -23,16 +23,33 @@ function persist() {
   }, 300)
 }
 
+function mapEnvironments(raw: any): Environment[] {
+  return (raw ?? []).map((e: any): Environment => ({
+    id: e.id, name: e.name,
+    vars: (e.vars ?? []).map((v: any): EnvVar => ({ key: v.key ?? '', value: v.value ?? '', enabled: v.enabled !== false })),
+  }))
+}
+
 export function useEnv() {
   async function loadEnvironments() {
     if (state.loaded) return
     const s: any = await LoadEnvironments()
     state.activeId = s?.activeId ?? ''
-    state.environments = (s?.environments ?? []).map((e: any): Environment => ({
-      id: e.id, name: e.name,
-      vars: (e.vars ?? []).map((v: any): EnvVar => ({ key: v.key ?? '', value: v.value ?? '', enabled: v.enabled !== false })),
-    }))
+    state.environments = mapEnvironments(s?.environments)
     state.loaded = true
+  }
+
+  // Reload environments from store without resetting the active selection.
+  // Use this after Go-side operations that write directly to the store
+  // (e.g. PickImportEnv, ImportAllFromPostman) so the dropdown stays fresh.
+  async function syncEnvironments() {
+    const s: any = await LoadEnvironments()
+    state.environments = mapEnvironments(s?.environments)
+    // Preserve in-memory activeId if the env still exists; otherwise fall back
+    // to the store's saved activeId.
+    if (!state.activeId || !state.environments.some(e => e.id === state.activeId)) {
+      state.activeId = s?.activeId ?? ''
+    }
   }
 
   const environments = computed(() => state.environments)
@@ -90,7 +107,7 @@ export function useEnv() {
 
   return {
     environments, activeId, active, activeVars,
-    loadEnvironments, setActive, createEnv, deleteEnv, addVar, removeVar, touch, applyVars,
+    loadEnvironments, syncEnvironments, setActive, createEnv, deleteEnv, addVar, removeVar, touch, applyVars,
     modalOpen, openModal, closeModal,
   }
 }

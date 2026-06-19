@@ -25,7 +25,7 @@ import { useVarHint } from '../composables/useVarHint'
 
 const { active, closeTab } = useTabs()
 const dialog = useDialog()
-const { activeVars, applyVars } = useEnv()
+const { activeVars, active: activeEnv, applyVars } = useEnv()
 const { varHint, showVarHint, hideVarHint } = useVarHint()
 const varFmt = (n: string) => '{{' + n + '}}'
 const { record } = useHistory()
@@ -616,6 +616,7 @@ function onSetVerifySSL(s: string) {
           <option v-for="m in METHODS" :key="m" :value="m">{{ m }}</option>
         </select>
         <input v-model="active.url" class="url" :placeholder="URL_PLACEHOLDER" @input="onUrlInput" @keyup.enter="send" @paste="onUrlPaste" @mouseenter="showVarHint($event, active.url)" @mouseleave="hideVarHint" />
+        <span v-if="activeEnv" class="active-env-badge" :title="'Active environment: ' + activeEnv.name">{{ activeEnv.name }}</span>
         <button v-if="!active.sending" class="send" @click="send">Send</button>
         <button v-else class="cancel" @click="cancel">Cancel</button>
         <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
@@ -1016,7 +1017,11 @@ function onSetVerifySSL(s: string) {
       <div v-for="p in varHint.pairs" :key="p.name" class="var-hint-row">
         <span class="var-hint-name">{{ varFmt(p.name) }}</span>
         <span class="var-hint-sep">→</span>
-        <span :class="p.found ? 'var-hint-val' : 'var-hint-unset'">{{ p.found ? (p.value || '(empty)') : 'not set' }}</span>
+        <span v-if="p.active" class="var-hint-val">{{ p.value || '(empty)' }}</span>
+        <span v-else-if="p.found" class="var-hint-other" :title="'Defined in: ' + p.envName + ' (not the active environment)'">
+          {{ p.value || '(empty)' }} <em>[{{ p.envName }}]</em>
+        </span>
+        <span v-else class="var-hint-unset">not set</span>
       </div>
     </div>
   </Teleport>
@@ -1053,6 +1058,7 @@ function onSetVerifySSL(s: string) {
 .method { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; font: 700 12px monospace; padding: 0 8px; }
 .url { flex: 1; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; font: 13px monospace; padding: 8px 10px; }
 .url:focus, .method:focus { outline: none; border-color: var(--accent); }
+.active-env-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .send { background: var(--accent); color: var(--accent-text); border-radius: 5px; font-weight: 700; padding: 0 22px; }
 .cancel { background: var(--danger); color: #fff; border-radius: 5px; font-weight: 700; padding: 0 18px; }
 .save { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); padding: 0 14px; }
@@ -1219,5 +1225,7 @@ function onSetVerifySSL(s: string) {
 .var-hint-name { color: var(--accent); }
 .var-hint-sep { color: var(--text-faint); }
 .var-hint-val { color: var(--ok); word-break: break-all; white-space: normal; }
+.var-hint-other { color: var(--warn-text, #e6a817); word-break: break-all; white-space: normal; }
+.var-hint-other em { font-style: normal; opacity: 0.6; font-size: 10px; }
 .var-hint-unset { color: var(--text-faint); font-style: italic; }
 </style>

@@ -12,6 +12,7 @@ import { useTree, type FlatNode } from '../composables/useTree'
 import { useTabs } from '../composables/useTabs'
 import { useRunner } from '../composables/useRunner'
 import { useDialog } from '../composables/useDialog'
+import { useEnv } from '../composables/useEnv'
 import { toCurl, parseCurl } from '../composables/curl'
 
 const { flatList, loadRoot, toggleNode, searchNodes, refreshNode, removeNode, reloadChildren } = useTree()
@@ -102,6 +103,7 @@ async function onDrop(target: FlatNode) {
 const { openRequest, openAdhoc, closeTab } = useTabs()
 const { run: runColl } = useRunner()
 const dialog = useDialog()
+const { syncEnvironments } = useEnv()
 
 // ── Context / header menu ──────────────────────────────────────────────────
 interface MenuItem { label: string; danger?: boolean; run: () => void }
@@ -362,6 +364,7 @@ async function onImportEnv() {
   try {
     const name = await PickImportEnv()
     if (name) {
+      await syncEnvironments()
       statusMsg.value = `Environment "${name}" imported`
       setTimeout(() => { if (statusMsg.value.startsWith('Environment')) statusMsg.value = '' }, 2500)
     }
@@ -380,6 +383,7 @@ async function onImportAllFromPostman() {
   if (!apiKey?.trim()) return
   try {
     await ImportAllFromPostman(apiKey.trim())
+    await syncEnvironments()
   } catch (e) {
     flashError('Postman import failed', e)
   }
