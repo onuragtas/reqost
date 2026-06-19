@@ -4,7 +4,7 @@ import { useTabs, isDirty } from '../composables/useTabs'
 import { useEnv } from '../composables/useEnv'
 import { useDialog } from '../composables/useDialog'
 
-const { tabs, activeId, selectTab, closeTab } = useTabs()
+const { tabs, activeId, selectTab, closeTab, moveTab, pinTab, openAdhoc } = useTabs()
 const { environments, activeId: envActiveId, setActive, openModal } = useEnv()
 const dialog = useDialog()
 
@@ -24,26 +24,84 @@ function closeMenu() { menu.value = null }
 
 function openTabMenu(e: MouseEvent, id: string) {
   const idx = tabs.value.findIndex(t => t.id === id)
+  const t = tabs.value[idx]
   const items: MenuItem[] = [
+    { label: t?.pinned ? 'Unpin'        : 'Pin tab',   run: () => pinTab(id) },
     { label: 'Close',                   run: () => maybeClose(id) },
     { label: 'Close Others',            run: () => closeOthers(id) },
     { label: 'Close to the Right',      run: () => closeToTheRight(idx) },
-    { label: 'Close All',                run: () => closeAll(),        danger: true },
+    { label: 'Close All',               run: () => closeAll(),        danger: true },
   ]
   menu.value = { x: e.clientX, y: e.clientY, items }
 }
 
+// Pinned tabs are kept by Close Others / Close All — that's the contract
+// every modern editor has trained users on.
 async function closeOthers(keepId: string) {
   for (const t of [...tabs.value]) {
-    if (t.id !== keepId) await maybeClose(t.id)
+    if (t.id !== keepId && !t.pinned) await maybeClose(t.id)
   }
 }
 async function closeToTheRight(fromIdx: number) {
-  const ids = tabs.value.slice(fromIdx + 1).map(t => t.id)
+  const ids = tabs.value.slice(fromIdx + 1).filter(t => !t.pinned).map(t => t.id)
   for (const id of ids) await maybeClose(id)
 }
 async function closeAll() {
-  for (const t of [...tabs.value]) await maybeClose(t.id)
+  for (const t of [...tabs.value]) {
+    if (!t.pinned) await maybeClose(t.id)
+  }
+}
+
+// ── Drag-reorder ──
+const dragFromIdx = ref<number | null>(null)
+const dropIdx     = ref<number | null>(null)
+
+function onDragStart(e: DragEvent, idx: number) {
+  dragFromIdx.value = idx
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(idx))
+  }
+}
+function onDragOver(e: DragEvent, idx: number) {
+  if (dragFromIdx.value === null || dragFromIdx.value === idx) return
+  // Pin groups don't mix — refuse drop if the two sides of the line differ.
+  const from = tabs.value[dragFromIdx.value]
+  const to   = tabs.value[idx]
+  if (!from || !to || from.pinned !== to.pinned) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+  dropIdx.value = idx
+}
+function onDrop(idx: number) {
+  if (dragFromIdx.value !== null) moveTab(dragFromIdx.value, idx)
+  dragFromIdx.value = null
+  dropIdx.value = null
+}
+function onDragEnd() {
+  dragFromIdx.value = null
+  dropIdx.value = null
+}
+
+// Drop a URL (browser address bar, link in another app) onto empty tab-bar
+// space → open an adhoc tab. We only react if the drop carries `text/uri-list`
+// or a plain URL string — won't fight the tab-reorder DnD.
+function onBarDragOver(e: DragEvent) {
+  if (dragFromIdx.value !== null) return // tab reorder in progress
+  if (!e.dataTransfer) return
+  if (e.dataTransfer.types.includes('text/uri-list') || e.dataTransfer.types.includes('text/plain')) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+function onBarDrop(e: DragEvent) {
+  if (dragFromIdx.value !== null) return
+  const url = (e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '').trim()
+  if (!url) return
+  if (!/^https?:\/\/|^wss?:\/\/|^grpc:\/\/|^sse:\/\//.test(url)) return
+  let name = url
+  try { name = new URL(url).host } catch { /* keep raw */ }
+  openAdhoc({ name, method: 'GET', url })
 }
 
 // Cmd+1 .. Cmd+9 → switch to nth tab (Postman/Insomnia parity).
@@ -63,17 +121,24 @@ const METHOD_COLORS: Record<string, string> = {
 </script>
 
 <template>
-  <div class="tabbar">
+  <div class="tabbar" @dragover="onBarDragOver" @drop.prevent="onBarDrop">
     <div
-      v-for="t in tabs"
+      v-for="(t, i) in tabs"
       :key="t.id"
       class="tab"
-      :class="{ active: t.id === activeId }"
+      :class="{ active: t.id === activeId, pinned: t.pinned, 'drop-target': dropIdx === i }"
       :title="`${t.method} ${t.url || t.name}`"
+      :draggable="true"
       @click="selectTab(t.id)"
       @mousedown.middle.prevent="maybeClose(t.id)"
       @contextmenu.prevent="openTabMenu($event, t.id)"
+      @dragstart="onDragStart($event, i)"
+      @dragover="onDragOver($event, i)"
+      @dragleave="dropIdx = null"
+      @drop.prevent="onDrop(i)"
+      @dragend="onDragEnd"
     >
+      <span v-if="t.pinned" class="pin-mark" title="Pinned">📌</span>
       <span class="m" :style="{ color: METHOD_COLORS[t.method] ?? 'var(--text-dim)' }">{{ t.method }}</span>
       <span class="name">{{ t.name }}</span>
       <span v-if="isDirty(t)" class="dirty" title="Unsaved changes"></span>
@@ -137,6 +202,9 @@ const METHOD_COLORS: Record<string, string> = {
   color: var(--text);
   box-shadow: inset 0 2px 0 var(--accent);
 }
+.tab.pinned { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tab.drop-target { box-shadow: inset 2px 0 0 var(--accent); }
+.pin-mark { font-size: 9px; flex-shrink: 0; opacity: 0.75; }
 
 .m { font: 700 9px monospace; flex-shrink: 0; }
 .name {

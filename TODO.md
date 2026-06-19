@@ -245,37 +245,37 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Sort options** — alphabetical, last-used, manual order.
 
 ### G7 · Tabs
-- [ ] **Tab drag-reorder**.
-- [ ] **Tab pin** (dirty check by-pass) + pinned grup üstte.
-- [x] **Right-click → Close Others / To the Right / All**.
+- [x] **Tab drag-reorder** — pin grupları içinde, pin sınırını koruyor.
+- [x] **Tab pin** — Postman tarzı kalıcı tab, dirty-bypass + sol grup.
+- [x] **Right-click → Pin / Close Others / Right / All** (pinleri korur).
 - [x] **Full URL + method tooltip** uzun adlarda.
-- [ ] **Tab restore on launch** (last session tabs).
-- [ ] **Drag URL → tab bar** = openAdhoc.
+- [x] **Tab restore on launch** — açık tabs + active + pin localStorage.
+- [x] **Drag URL → tab bar** — `text/uri-list` / `text/plain` URL'leri openAdhoc.
 - [x] **Cmd+1..9 tab switch shortcut**.
 
 ### G8 · Response panel
 - [x] **Copy response body** button (one-click clipboard).
 - [x] **Save response to file** (binary için kritik).
 - [ ] **Response visualizer** — Postman'in `pm.visualizer.set(template, data)` ile custom HTML render.
-- [ ] **Image preview** (`image/*` content-type).
-- [ ] **HTML preview** (sandbox iframe, JS off).
-- [ ] **PDF preview** (Wails native veya base64 → object tag).
+- [x] **Image preview** (`image/*` content-type → data URL).
+- [x] **HTML preview** (sandbox iframe, JS off, srcdoc).
+- [x] **PDF preview** (`<object type="application/pdf">`).
 - [ ] **Diff with previous response** (response history'den seç → side-by-side).
 - [ ] **JSON path picker** (tree node tıkla → `$.path` clipboard).
-- [ ] **Search in response headers** (içinde Cmd+F).
-- [ ] **50 MiB truncation banner** — sessiz değil görünür.
+- [x] **Search in response headers** — filter input.
+- [x] **50 MiB truncation banner** — Body sekmesinde uyarı.
 - [ ] **Response time sparkline** son N send.
 - [ ] **Response size warning** (5 MB üstünde "büyük response" badge).
 - [x] **Status code description** — full HTTP phrase table + class hint tooltip.
-- [ ] **Decode base64 / URL-encoded body** quick action.
+- [x] **Decode base64 body** quick action — Body view bar'da 🔓 Base64 toggle.
 
 ### G9 · Send actions
 - [x] **Send & Save** (Cmd+Shift+Enter).
 - [x] **Send & Download** (response → file).
-- [ ] **Send N times** (stress test mini-mode).
+- [x] **Send N times** — Send dropdown: 5/10/N… avg+ok/fail logs.
 - [ ] **Send All in folder (parallel)** — şu an seq runner var.
-- [ ] **Send button dropdown** — Send / Send & Save / Send Copy.
-- [ ] **Retry button** (failed response sonrası tek-tık tekrar).
+- [x] **Send button dropdown** — Send & Save / Send N times / Save response.
+- [x] **Retry button** (response bar'da ↻).
 - [ ] **"Send to background"** (uzun response'lar için).
 - [ ] **Schedule send** (cron veya delay).
 
@@ -286,13 +286,13 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Cookie export** clipboard / file.
 
 ### G11 · Runner (Newman parite)
-- [ ] **Iterations (`-n 5`)** — `reqost run` ve UI runner.
+- [x] **Iterations (`-n 5`)** — CLI runner.
 - [ ] **Data file (`-d data.csv` / `.json`)** — iteration başına bir row → variables.
-- [ ] **Delay between requests** (`--delay 500ms`).
-- [ ] **Bail on first failure** (`--bail`).
-- [ ] **Folder filter** (`--folder Auth`).
+- [x] **Delay between requests** (`--delay 500`).
+- [x] **Bail on first failure** (`--bail`).
+- [x] **Folder filter** (`--folder Auth`).
 - [ ] **Reporters: html, allure** (junit + json + text var).
-- [ ] **`--insecure` flag** (verify SSL off CLI'da).
+- [x] **`--insecure` flag** (verify SSL off CLI'da).
 - [ ] **Runner progress UI** — şu an basit; per-iteration log + ortalama / p95 metrik.
 
 ### G12 · Mock server iyileştirmeleri
@@ -361,10 +361,10 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [x] **Keyboard shortcuts cheat sheet** — Settings → modal + Cmd+/ jumps to Settings.
 - [ ] **Full keyboard navigation** (focus ring, no mouse).
 - [ ] **High contrast theme**.
-- [ ] **Reduced motion** (animation kapat).
+- [x] **Reduced motion** — `@media (prefers-reduced-motion)` global guard.
 - [ ] **Localization** — TR + EN.
 - [ ] **Date/time format** — locale-aware (RFC, ISO, relative).
-- [ ] **Status bar** — alt-bar: workspace · env · proxy · plugin sayısı.
+- [x] **Status bar** — workspace · env · proxy · plugin count · tab count.
 
 ### G20 · Reliability / quality of life
 - [ ] **Crash report opt-in** (telemetri yok varsayılan).

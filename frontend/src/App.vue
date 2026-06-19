@@ -15,6 +15,7 @@ import { useEnv } from './composables/useEnv'
 import { useTheme } from './composables/useTheme'
 import SettingsPanel from './components/SettingsPanel.vue'
 import DesignPanel from './components/DesignPanel.vue'
+import StatusBar from './components/StatusBar.vue'
 
 const { loadEnvironments, openModal } = useEnv()
 const { register, open: openPalette } = useCommands()
@@ -69,6 +70,8 @@ onMounted(() => {
         <RequestWorkbench />
       </main>
     </div>
+
+    <StatusBar />
 
     <EnvironmentsModal />
     <RunnerModal />

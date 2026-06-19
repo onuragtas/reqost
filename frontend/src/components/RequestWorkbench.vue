@@ -439,13 +439,59 @@ const prettyBody = computed(() => {
 })
 
 // ── Response body view mode (Pretty / Raw / Tree) ──────────────────────────
-type BodyView = 'pretty' | 'raw' | 'tree'
+type BodyView = 'pretty' | 'raw' | 'tree' | 'preview'
 const bodyView = ref<BodyView>('pretty')
 const bodyJSON = computed(() => {
   const b = active.value?.response?.body ?? ''
   try { return JSON.parse(b) } catch { return null }
 })
 const canTree = computed(() => bodyJSON.value !== null)
+
+// Content-type sniffing for response previews (G8).
+const responseContentType = computed<string>(() => {
+  const hs = active.value?.response?.headers ?? []
+  const h = hs.find((x: any) => x.key.toLowerCase() === 'content-type')
+  return (h?.value ?? '').toLowerCase()
+})
+const isImageResponse = computed(() => responseContentType.value.startsWith('image/'))
+const isHtmlResponse  = computed(() => responseContentType.value.includes('html'))
+const isPdfResponse   = computed(() => responseContentType.value.includes('pdf'))
+const canPreview      = computed(() => isImageResponse.value || isHtmlResponse.value || isPdfResponse.value)
+
+const RESP_TRUNC_BYTES = 50 * 1024 * 1024
+const responseTruncated = computed(() => (active.value?.response?.sizeBytes ?? 0) >= RESP_TRUNC_BYTES)
+
+// data: URL for image / pdf preview. Body comes through as a Go string —
+// raw bytes survive because Go uses []byte(string conversion) at the
+// serialization edge, so we round-trip via Uint8Array.from(charCodes).
+const previewDataUrl = computed(() => {
+  const body = active.value?.response?.body
+  if (!body || !canPreview.value) return ''
+  const ct = responseContentType.value || 'application/octet-stream'
+  // For the common case (small payload) base64-encode in-line. Skip beyond
+  // 5 MB so the encoder doesn't choke; the user can still Save.
+  if (body.length > 5_000_000) return ''
+  const bytes = new Uint8Array(body.length)
+  for (let i = 0; i < body.length; i++) bytes[i] = body.charCodeAt(i) & 0xff
+  let s = ''
+  for (const b of bytes) s += String.fromCharCode(b)
+  return `data:${ct};base64,${btoa(s)}`
+})
+
+// Decode-base64 quick action: replaces the response body text with its
+// decoded form so the user can squint at it without a side trip to a tool.
+const decodedBody = ref<string | null>(null)
+function decodeB64Body() {
+  const body = active.value?.response?.body
+  if (!body) return
+  try {
+    const trimmed = body.replace(/[\s"']/g, '')
+    decodedBody.value = atob(trimmed)
+  } catch (e: any) {
+    decodedBody.value = `⚠ not base64: ${e?.message ?? e}`
+  }
+}
+function resetDecode() { decodedBody.value = null }
 
 function fmtSize(n: number) {
   if (n < 1024) return `${n} B`
@@ -681,6 +727,39 @@ async function loadGqlSchema() {
   }
 }
 
+// ── Response headers filter (G8) ───────────────────────────────────────
+const headersFilter = ref('')
+const filteredResHeaders = computed(() => {
+  const all = (active.value?.response?.headers ?? []) as any[]
+  const q = headersFilter.value.trim().toLowerCase()
+  if (!q) return all
+  return all.filter(h => h.key.toLowerCase().includes(q) || String(h.value).toLowerCase().includes(q))
+})
+
+// ── Send menu actions (G9) ─────────────────────────────────────────────
+const showSendMenu = ref(false)
+let runStats = { ok: 0, fail: 0, totalMs: 0 }
+async function sendNTimes(n: number) {
+  const t = active.value
+  if (!t || !t.url.trim() || n < 1) return
+  runStats = { ok: 0, fail: 0, totalMs: 0 }
+  for (let i = 0; i < n; i++) {
+    if (t.sending) break
+    await send()
+    const ms = t.response?.timing?.totalMs ?? 0
+    runStats.totalMs += ms
+    const code = t.response?.status ?? 0
+    if (code >= 200 && code < 400) runStats.ok++; else runStats.fail++
+  }
+  t.logs = [...(t.logs ?? []), `▶ Ran ${n} times — ${runStats.ok} ok / ${runStats.fail} fail · avg ${(runStats.totalMs / n).toFixed(0)} ms`]
+  t.resSubTab = 'testResults'
+}
+async function sendNTimesPrompt() {
+  const raw = await dialog.prompt('How many times?', '20')
+  const n = Math.max(1, Math.min(500, Number(raw) || 0))
+  if (n > 0) sendNTimes(n)
+}
+
 // ── Per-tab vars (G5) ───────────────────────────────────────────────────
 const newTabVarKey = ref('')
 const newTabVarVal = ref('')
@@ -905,7 +984,20 @@ function onSetVerifySSL(s: string) {
         </select>
         <input v-model="active.url" class="url" :placeholder="URL_PLACEHOLDER" @input="onUrlInput" @keyup.enter="send" @paste="onUrlPaste" @mouseenter="showVarHint($event, active.url)" @mouseleave="hideVarHint" />
         <span v-if="activeEnv" class="active-env-badge" :title="'Active environment: ' + activeEnv.name">{{ activeEnv.name }}</span>
-        <button v-if="!active.sending" class="send" @click="send">Send</button>
+        <div v-if="!active.sending" class="send-group">
+          <button class="send" @click="send">Send</button>
+          <div class="send-menu-wrap">
+            <button class="send-more" title="More send options" @click.stop="showSendMenu = !showSendMenu">▾</button>
+            <div v-if="showSendMenu" class="send-menu" @click.stop>
+              <button class="sm-item" @click="sendAndSave(); showSendMenu = false">Send &amp; Save  <span class="kb">⌘⇧↵</span></button>
+              <button class="sm-item" @click="sendNTimes(5); showSendMenu = false">Send 5 times</button>
+              <button class="sm-item" @click="sendNTimes(10); showSendMenu = false">Send 10 times</button>
+              <button class="sm-item" @click="sendNTimesPrompt(); showSendMenu = false">Send N times…</button>
+              <button class="sm-item" @click="downloadResponseBody(); showSendMenu = false" :disabled="!active.response">Save response…</button>
+            </div>
+            <div v-if="showSendMenu" class="menu-backdrop" @click="showSendMenu = false" />
+          </div>
+        </div>
         <button v-else class="cancel" @click="cancel">Cancel</button>
         <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
         <button class="code-btn" :class="{ active: showCode }" title="Generate code" @click="showCode = !showCode">&lt;/&gt;</button>
@@ -1343,6 +1435,11 @@ function onSetVerifySSL(s: string) {
                 </svg>
               </span>
               <span class="meta">{{ fmtSize(active.response.sizeBytes) }}</span>
+              <button
+                class="save-ex" title="Resend the same request"
+                :disabled="active.sending"
+                @click="send"
+              >↻ Retry</button>
               <button class="save-ex icon-btn" :title="'Copy response body'" @click="copyResponseBody">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="2" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
                 <span v-if="copiedBody">Copied</span><span v-else>Copy</span>
@@ -1370,40 +1467,73 @@ function onSetVerifySSL(s: string) {
 
             <template v-if="active.resSubTab === 'body'">
               <div class="body-view-bar">
-                <button
-                  class="bv-btn" :class="{ active: bodyView === 'pretty' }"
-                  @click="bodyView = 'pretty'"
-                >Pretty</button>
-                <button
-                  class="bv-btn" :class="{ active: bodyView === 'raw' }"
-                  @click="bodyView = 'raw'"
-                >Raw</button>
+                <button class="bv-btn" :class="{ active: bodyView === 'pretty' }" @click="bodyView = 'pretty'">Pretty</button>
+                <button class="bv-btn" :class="{ active: bodyView === 'raw' }"    @click="bodyView = 'raw'">Raw</button>
                 <button
                   class="bv-btn" :class="{ active: bodyView === 'tree' }"
                   :disabled="!canTree"
                   :title="!canTree ? 'Tree view requires a JSON body' : ''"
                   @click="bodyView = 'tree'"
                 >Tree</button>
+                <button
+                  class="bv-btn" :class="{ active: bodyView === 'preview' }"
+                  :disabled="!canPreview"
+                  :title="!canPreview ? 'Preview requires image / HTML / PDF Content-Type' : ''"
+                  @click="bodyView = 'preview'"
+                >Preview</button>
+
+                <div class="bv-sep"></div>
+                <button class="bv-btn" :title="decodedBody ? 'Hide decoded' : 'Decode body as base64'"
+                  @click="decodedBody ? resetDecode() : decodeB64Body()">
+                  {{ decodedBody ? '↺ Original' : '🔓 Base64' }}
+                </button>
               </div>
-              <JsonTree v-if="bodyView === 'tree' && canTree" :value="bodyJSON" />
+
+              <div v-if="responseTruncated" class="trunc-banner">
+                ⚠ Response truncated at {{ Math.round(RESP_TRUNC_BYTES / 1024 / 1024) }} MiB. Use <strong>Save</strong> to keep what arrived.
+              </div>
+
+              <!-- Preview takes precedence for image/html/pdf bodies -->
+              <template v-if="bodyView === 'preview' && canPreview">
+                <div v-if="isImageResponse" class="img-preview"><img :src="previewDataUrl" alt="Response" /></div>
+                <iframe
+                  v-else-if="isHtmlResponse"
+                  class="html-preview"
+                  sandbox=""
+                  :srcdoc="active.response.body"
+                />
+                <object
+                  v-else-if="isPdfResponse && previewDataUrl"
+                  class="pdf-preview"
+                  :data="previewDataUrl" type="application/pdf"
+                />
+                <div v-else class="soon"><span>Body too large to preview inline. Use Save.</span></div>
+              </template>
+
+              <JsonTree v-else-if="bodyView === 'tree' && canTree" :value="bodyJSON" />
               <EditorPane
                 v-else-if="bodyView === 'pretty'"
-                :model-value="prettyBody"
-                :language="canTree ? 'json' : 'plain'"
+                :model-value="decodedBody ?? prettyBody"
+                :language="canTree && !decodedBody ? 'json' : 'plain'"
                 readonly min-height="100%"
                 @update:model-value="() => {}"
               />
               <EditorPane
                 v-else
-                :model-value="active.response.body"
+                :model-value="decodedBody ?? active.response.body"
                 language="plain" readonly min-height="100%"
                 @update:model-value="() => {}"
               />
             </template>
             <div v-else-if="active.resSubTab === 'headers'" class="res-headers selectable">
-              <div v-for="(h, i) in active.response.headers" :key="i" class="rh">
+              <input
+                v-model="headersFilter" class="hdr-filter"
+                placeholder="Filter headers…  (Cmd+F)"
+              />
+              <div v-for="(h, i) in filteredResHeaders" :key="i" class="rh">
                 <span class="rh-k">{{ h.key }}</span><span class="rh-v">{{ h.value }}</span>
               </div>
+              <div v-if="!filteredResHeaders.length" class="soon"><span>No headers match.</span></div>
             </div>
             <div v-else-if="active.resSubTab === 'cookies'" class="cookies selectable">
               <div class="cookies-head">
@@ -1509,7 +1639,31 @@ function onSetVerifySSL(s: string) {
 .url { flex: 1; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; font: 13px monospace; padding: 8px 10px; }
 .url:focus, .method:focus { outline: none; border-color: var(--accent); }
 .active-env-badge { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.send { background: var(--accent); color: var(--accent-text); border-radius: 5px; font-weight: 700; padding: 0 22px; }
+.send-group { display: inline-flex; align-items: stretch; }
+.send { background: var(--accent); color: var(--accent-text); border-radius: 5px 0 0 5px; font-weight: 700; padding: 0 22px; }
+.send-menu-wrap { position: relative; display: flex; }
+.send-more {
+  background: var(--accent); color: var(--accent-text);
+  border-left: 1px solid color-mix(in srgb, var(--accent-text) 25%, transparent);
+  border-radius: 0 5px 5px 0; padding: 0 8px; font-weight: 700;
+}
+.send-more:hover { filter: brightness(1.1); }
+.send-menu {
+  position: absolute; top: calc(100% + 4px); right: 0; min-width: 200px;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 4px; z-index: 110;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  display: flex; flex-direction: column;
+}
+.sm-item {
+  display: flex; align-items: center; justify-content: space-between;
+  text-align: left; font-size: 12px; color: var(--text); padding: 6px 10px;
+  border-radius: 4px; background: transparent;
+}
+.sm-item:hover:not(:disabled) { background: var(--bg-hover); }
+.sm-item:disabled { color: var(--text-faint); cursor: default; }
+.sm-item .kb { font-size: 10px; color: var(--text-faint); }
+.menu-backdrop { position: fixed; inset: 0; z-index: 109; }
 .cancel { background: var(--danger); color: #fff; border-radius: 5px; font-weight: 700; padding: 0 18px; }
 .save { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); padding: 0 14px; }
 .save:disabled { opacity: 0.6; cursor: default; }
@@ -1697,12 +1851,23 @@ function onSetVerifySSL(s: string) {
 .meta { color: var(--text-dim); font-size: 12px; }
 .res-subtabs { margin-left: auto; }
 .res-body { flex: 1; overflow: auto; padding: 12px 16px; color: var(--text); font: 12px/1.5 monospace; white-space: pre-wrap; word-break: break-word; }
-.body-view-bar { display: flex; gap: 4px; padding: 4px 16px; background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.body-view-bar { display: flex; gap: 4px; align-items: center; padding: 4px 16px; background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.bv-sep { width: 1px; height: 14px; background: var(--border); margin: 0 4px; }
+.trunc-banner { background: color-mix(in srgb, var(--warn-text) 18%, transparent); color: var(--warn-text); font-size: 11px; padding: 6px 14px; border-bottom: 1px solid var(--border); }
+.img-preview, .html-preview, .pdf-preview { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; background: #0c0c0c; }
+.img-preview img { max-width: 100%; max-height: 100%; image-rendering: -webkit-optimize-contrast; }
+.html-preview, .pdf-preview { width: 100%; border: 0; background: #fff; }
 .bv-btn { font-size: 10px; padding: 3px 8px; color: var(--text-faint); border-radius: 3px; }
 .bv-btn:hover:not(:disabled) { color: var(--text-dim); }
 .bv-btn.active { color: var(--text); background: var(--bg-input); }
 .bv-btn:disabled { opacity: 0.4; cursor: default; }
 .res-headers { flex: 1; overflow: auto; padding: 8px 16px; }
+.hdr-filter {
+  width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); font: 12px monospace;
+  padding: 5px 8px; margin-bottom: 8px;
+}
+.hdr-filter:focus { outline: none; border-color: var(--accent); }
 .rh { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); font: 12px monospace; }
 .rh-k { color: #61affe; min-width: 220px; word-break: break-all; }
 .rh-v { color: var(--text); word-break: break-all; }

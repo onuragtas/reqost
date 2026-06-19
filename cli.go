@@ -64,16 +64,21 @@ type runItemRep struct {
 
 func cliRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	envPath := fs.String("e", "", "Postman environment JSON file to apply")
-	envFlag := fs.String("env", "", "Alias for -e")
-	format  := fs.String("format", "junit", "report format: junit | json | text")
-	outPath := fs.String("out", "", "write report to this path (default stdout)")
-	verbose := fs.Bool("v", false, "verbose: print each request as it runs")
+	envPath    := fs.String("e", "", "Postman environment JSON file to apply")
+	envFlag    := fs.String("env", "", "Alias for -e")
+	format     := fs.String("format", "junit", "report format: junit | json | text")
+	outPath    := fs.String("out", "", "write report to this path (default stdout)")
+	verbose    := fs.Bool("v", false, "verbose: print each request as it runs")
+	iterations := fs.Int("n", 1, "number of iterations (Newman -n)")
+	delayMs    := fs.Int("delay", 0, "delay between requests in milliseconds")
+	bail       := fs.Bool("bail", false, "stop the run on first failure")
+	folder     := fs.String("folder", "", "only run requests whose name contains this substring")
+	insecure   := fs.Bool("insecure", false, "skip TLS verification")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: reqost run <collection.json> [-e env.json] [--format junit|json|text]")
+		fmt.Fprintln(os.Stderr, "usage: reqost run <collection.json> [-e env.json] [-n iter] [--delay ms] [--bail] [--folder name] [--insecure] [--format junit|json|text]")
 		return 2
 	}
 	collectionPath := fs.Arg(0)
@@ -100,78 +105,106 @@ func cliRun(args []string) int {
 	cache := httpclient.NewCache()
 	rep := runReport{Suite: collectionPath, StartedAt: time.Now()}
 
+	if *iterations < 1 {
+		*iterations = 1
+	}
+
+	// Filter once so the iteration loop is tight.
+	type runItem struct{ it collection.FlatItem }
+	plan := make([]runItem, 0, len(items))
 	for _, it := range items {
 		if it.Type != "request" {
 			continue
 		}
-		headers, formFields, auth := parseDetail(it)
-		req := httpclient.Request{
-			Method:     it.Method,
-			URL:        it.URL,
-			Headers:    headers,
-			Body:       it.Body,
-			BodyType:   it.BodyType,
-			FormFields: formFields,
-			Auth:       auth,
-			Variables:  vars,
+		if *folder != "" && !strings.Contains(strings.ToLower(it.Name), strings.ToLower(*folder)) {
+			continue
 		}
-		httpclient.ResolveResponseRefs(&req, cache.Snapshot())
+		plan = append(plan, runItem{it: it})
+	}
 
-		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-
-		// Pre-request script may mutate vars + request.
-		if it.PreScript != "" {
-			r := script.RunPre(it.PreScript, vars, toScriptRequest(req), nil, script.Info{RequestName: it.Name})
-			vars = r.Vars
-			req.Variables = vars
-			if r.Request != nil {
-				applyScriptRequest(&req, r.Request)
+iterLoop:
+	for iter := 0; iter < *iterations; iter++ {
+		for _, p := range plan {
+			it := p.it
+			headers, formFields, auth := parseDetail(it)
+				req := httpclient.Request{
+				Method:             it.Method,
+				URL:                it.URL,
+				Headers:            headers,
+				Body:               it.Body,
+				InsecureSkipVerify: *insecure,
+				BodyType:           it.BodyType,
+				FormFields:         formFields,
+				Auth:               auth,
+				Variables:          vars,
 			}
-		}
+			httpclient.ResolveResponseRefs(&req, cache.Snapshot())
 
-		resp, err := client.Execute(ctx, req)
-		cancel()
-		dur := time.Since(start).Seconds() * 1000
+			start := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 
-		item := runItemRep{
-			Name: it.Name, Method: req.Method, URL: req.URL, DurationMs: dur,
-		}
-		if err != nil {
-			item.Error = err.Error()
-			rep.Failed++
-		} else {
-			item.Status = resp.Status
-			item.Ok = resp.Status >= 200 && resp.Status < 400
-			cache.Put(it.Name, httpclient.LastResponse{Status: resp.Status, Body: resp.Body, Headers: resp.Headers})
-
-			// Test script.
-			if it.PostScript != "" {
-				r := script.RunTests(it.PostScript, vars, toScriptResponse(resp), nil, script.Info{RequestName: it.Name})
-				item.Tests = r.Tests
+			if it.PreScript != "" {
+				r := script.RunPre(it.PreScript, vars, toScriptRequest(req), nil, script.Info{RequestName: it.Name})
 				vars = r.Vars
-				for _, tr := range r.Tests {
-					if !tr.Passed {
-						rep.Failed++
-					} else {
-						rep.Passed++
-					}
+				req.Variables = vars
+				if r.Request != nil {
+					applyScriptRequest(&req, r.Request)
 				}
-			} else if item.Ok {
-				rep.Passed++
-			} else {
-				rep.Failed++
 			}
-		}
-		rep.Items = append(rep.Items, item)
-		rep.Total++
 
-		if *verbose {
-			marker := "✓"
-			if !item.Ok || item.Error != "" {
-				marker = "✗"
+			resp, err := client.Execute(ctx, req)
+			cancel()
+			dur := time.Since(start).Seconds() * 1000
+
+			item := runItemRep{
+				Name: it.Name, Method: req.Method, URL: req.URL, DurationMs: dur,
 			}
-			fmt.Fprintf(os.Stderr, "%s %s %s — %d (%.0f ms)\n", marker, item.Method, item.Name, item.Status, item.DurationMs)
+			failedThisItem := false
+			if err != nil {
+				item.Error = err.Error()
+				rep.Failed++
+				failedThisItem = true
+			} else {
+				item.Status = resp.Status
+				item.Ok = resp.Status >= 200 && resp.Status < 400
+				cache.Put(it.Name, httpclient.LastResponse{Status: resp.Status, Body: resp.Body, Headers: resp.Headers})
+
+				if it.PostScript != "" {
+					r := script.RunTests(it.PostScript, vars, toScriptResponse(resp), nil, script.Info{RequestName: it.Name})
+					item.Tests = r.Tests
+					vars = r.Vars
+					for _, tr := range r.Tests {
+						if !tr.Passed {
+							rep.Failed++
+							failedThisItem = true
+						} else {
+							rep.Passed++
+						}
+					}
+				} else if item.Ok {
+					rep.Passed++
+				} else {
+					rep.Failed++
+					failedThisItem = true
+				}
+			}
+			rep.Items = append(rep.Items, item)
+			rep.Total++
+
+			if *verbose {
+				marker := "✓"
+				if !item.Ok || item.Error != "" {
+					marker = "✗"
+				}
+				fmt.Fprintf(os.Stderr, "%s [iter %d] %s %s — %d (%.0f ms)\n", marker, iter+1, item.Method, item.Name, item.Status, item.DurationMs)
+			}
+
+			if *bail && failedThisItem {
+				break iterLoop
+			}
+			if *delayMs > 0 {
+				time.Sleep(time.Duration(*delayMs) * time.Millisecond)
+			}
 		}
 	}
 	rep.EndedAt = time.Now()

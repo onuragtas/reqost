@@ -78,3 +78,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* G19 — honour the OS "reduce motion" preference. Cuts the split-bar / pane
+   transitions and the update-pill pulse down to instant changes so users who
+   set this flag don't get vestibular nausea. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}

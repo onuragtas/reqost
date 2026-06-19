@@ -1,4 +1,4 @@
-import { reactive, computed } from 'vue'
+import { reactive, computed, watch } from 'vue'
 import { GetRequestDetail } from '../../bindings/reqost/collectionservice'
 import type { FlatNode } from './useTree'
 import { parseQuery } from './url'
@@ -109,6 +109,9 @@ export interface ReqTab {
   // duration of the tab. Tab-only state (not persisted via SaveRequest), so
   // it acts as a local scratchpad.
   tabVars: Record<string, string>
+  // G7: pin keeps the tab when "Close Others / All" runs, and renders the
+  // pinned group at the front of the bar.
+  pinned: boolean
   clean: string // snapshot() at last load/save; '' means not yet baselined
   reqSubTab: ReqSubTab
   resSubTab: ResSubTab
@@ -136,11 +139,101 @@ const state = reactive({
   activeId: '',
 })
 
+// ── G7: Persist open tabs across launches ─────────────────────────────────
+// Only the bits needed to re-open the tab go to disk; in-flight response
+// state, send errors, console logs etc. are recomputed on demand.
+const SESSION_KEY = 'reqost:tabs:v1'
+interface SerializedTab {
+  id: string
+  name: string
+  method: string
+  url: string
+  pinned?: boolean
+  // For adhoc tabs (id not from a collection node) the saved body/headers/
+  // auth round-trip too. For collection-backed tabs (`id` is a real node)
+  // these will be re-fetched by openRequest → load.
+  isAdhoc?: boolean
+  body?: string
+  bodyType?: BodyType
+  headers?: HeaderRow[]
+  auth?: Auth
+}
+
+function saveSession() {
+  try {
+    const payload = {
+      activeId: state.activeId,
+      tabs: state.tabs.map<SerializedTab>(t => {
+        const adhoc = t.id.startsWith('tab-') || t.id.length === 36 // random/uuid
+        const base: SerializedTab = {
+          id: t.id, name: t.name, method: t.method, url: t.url,
+          pinned: t.pinned || undefined,
+        }
+        if (adhoc) {
+          base.isAdhoc = true
+          base.body = t.body
+          base.bodyType = t.bodyType
+          base.headers = t.headers
+          base.auth = t.auth
+        }
+        return base
+      }),
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(payload))
+  } catch { /* localStorage full or disabled — silent */ }
+}
+
+let restored = false
+function restoreSession() {
+  if (restored) return
+  restored = true
+  let payload: any
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    if (!raw) return
+    payload = JSON.parse(raw)
+  } catch { return }
+  if (!payload?.tabs?.length) return
+
+  for (const s of payload.tabs as SerializedTab[]) {
+    if (s.isAdhoc) {
+      const tab = blankTab(s.id, s.name, s.method)
+      tab.url = s.url
+      tab.params = parseQuery(s.url)
+      tab.body = s.body ?? ''
+      tab.bodyType = s.bodyType ?? (tab.body ? 'raw' : 'none')
+      tab.headers = (s.headers ?? []).map(h => ({ ...h }))
+      if (s.auth) tab.auth = { ...s.auth }
+      tab.pinned = !!s.pinned
+      tab.loading = false
+      markClean(tab)
+      state.tabs.push(tab)
+    } else {
+      const tab = blankTab(s.id, s.name, s.method)
+      tab.pinned = !!s.pinned
+      state.tabs.push(tab)
+      void load(tab.id)
+    }
+  }
+  state.activeId = payload.activeId && state.tabs.some(t => t.id === payload.activeId)
+    ? payload.activeId
+    : (state.tabs[0]?.id ?? '')
+}
+
+// Persist whenever tabs / active selection / pin state changes. `flush: post`
+// debounces multiple mutations in the same tick into one localStorage write.
+watch(
+  () => state.tabs.map(t => `${t.id}|${t.pinned ? 1 : 0}|${t.name}|${t.method}|${t.url}`).join('§')
+    + '||' + state.activeId,
+  saveSession,
+  { flush: 'post' },
+)
+
 function blankTab(id: string, name: string, method: string): ReqTab {
   return {
     id, name, method: method || 'GET',
     url: '', params: [], headers: [], body: '', bodyType: 'none', formFields: [], graphqlVars: '', grpcMethod: '', auth: blankAuth(),
-    preScript: '', postScript: '', description: '', settings: {}, examples: [], tabVars: {}, clean: '',
+    preScript: '', postScript: '', description: '', settings: {}, examples: [], tabVars: {}, pinned: false, clean: '',
     reqSubTab: 'headers', resSubTab: 'body',
     loading: true, sending: false, sendError: '', response: null,
     tests: [], logs: [],
@@ -270,6 +363,9 @@ export function toDetail(tab: ReqTab) {
 }
 
 export function useTabs() {
+  // First call kicks off the restore — module-level guard prevents repeats.
+  restoreSession()
+
   const tabs = computed(() => state.tabs)
   const activeId = computed(() => state.activeId)
   const active = computed(() => state.tabs.find(t => t.id === state.activeId) ?? null)
@@ -317,5 +413,27 @@ export function useTabs() {
     }
   }
 
-  return { tabs, activeId, active, openRequest, openAdhoc, selectTab, closeTab }
+  // G7: drag-reorder the tab bar. `fromIdx`/`toIdx` index into the visible
+  // bar (which already groups pinned first).
+  function moveTab(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return
+    if (fromIdx >= state.tabs.length || toIdx >= state.tabs.length) return
+    // Refuse to move a pinned tab past the last pinned, or a non-pinned tab
+    // before the last pinned — visually that's what users expect.
+    const moving = state.tabs[fromIdx]
+    const target = state.tabs[toIdx]
+    if (moving.pinned !== target.pinned) return
+    const [t] = state.tabs.splice(fromIdx, 1)
+    state.tabs.splice(toIdx, 0, t)
+  }
+
+  function pinTab(id: string) {
+    const t = state.tabs.find(x => x.id === id)
+    if (!t) return
+    t.pinned = !t.pinned
+    // Re-sort so pinned tabs cluster at the front of the bar.
+    state.tabs.sort((a, b) => (a.pinned === b.pinned ? 0 : a.pinned ? -1 : 1))
+  }
+
+  return { tabs, activeId, active, openRequest, openAdhoc, selectTab, closeTab, moveTab, pinTab }
 }
