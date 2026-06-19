@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useTabs, isDirty } from '../composables/useTabs'
 import { useEnv } from '../composables/useEnv'
 import { useDialog } from '../composables/useDialog'
@@ -16,6 +17,46 @@ async function maybeClose(id: string) {
   closeTab(id)
 }
 
+// ── Right-click context menu (G7) ──
+interface MenuItem { label: string; run: () => void; danger?: boolean }
+const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null)
+function closeMenu() { menu.value = null }
+
+function openTabMenu(e: MouseEvent, id: string) {
+  const idx = tabs.value.findIndex(t => t.id === id)
+  const items: MenuItem[] = [
+    { label: 'Close',                   run: () => maybeClose(id) },
+    { label: 'Close Others',            run: () => closeOthers(id) },
+    { label: 'Close to the Right',      run: () => closeToTheRight(idx) },
+    { label: 'Close All',                run: () => closeAll(),        danger: true },
+  ]
+  menu.value = { x: e.clientX, y: e.clientY, items }
+}
+
+async function closeOthers(keepId: string) {
+  for (const t of [...tabs.value]) {
+    if (t.id !== keepId) await maybeClose(t.id)
+  }
+}
+async function closeToTheRight(fromIdx: number) {
+  const ids = tabs.value.slice(fromIdx + 1).map(t => t.id)
+  for (const id of ids) await maybeClose(id)
+}
+async function closeAll() {
+  for (const t of [...tabs.value]) await maybeClose(t.id)
+}
+
+// Cmd+1 .. Cmd+9 → switch to nth tab (Postman/Insomnia parity).
+function onKey(e: KeyboardEvent) {
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+  if (e.key < '1' || e.key > '9') return
+  const idx = Number(e.key) - 1
+  const t = tabs.value[idx]
+  if (t) { e.preventDefault(); selectTab(t.id) }
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onUnmounted(() => window.removeEventListener('keydown', onKey))
+
 const METHOD_COLORS: Record<string, string> = {
   GET: '#61affe', POST: '#49cc90', PUT: '#fca130', PATCH: '#50e3c2', DELETE: '#f93e3e',
 }
@@ -28,14 +69,28 @@ const METHOD_COLORS: Record<string, string> = {
       :key="t.id"
       class="tab"
       :class="{ active: t.id === activeId }"
+      :title="`${t.method} ${t.url || t.name}`"
       @click="selectTab(t.id)"
       @mousedown.middle.prevent="maybeClose(t.id)"
+      @contextmenu.prevent="openTabMenu($event, t.id)"
     >
       <span class="m" :style="{ color: METHOD_COLORS[t.method] ?? 'var(--text-dim)' }">{{ t.method }}</span>
       <span class="name">{{ t.name }}</span>
       <span v-if="isDirty(t)" class="dirty" title="Unsaved changes"></span>
       <button class="close" title="Close" @click.stop="maybeClose(t.id)">✕</button>
     </div>
+
+    <!-- context menu -->
+    <template v-if="menu">
+      <div class="ctx-overlay" @click="closeMenu" @contextmenu.prevent="closeMenu" />
+      <div class="ctx-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }">
+        <button
+          v-for="(it, i) in menu.items" :key="i"
+          class="ctx-item" :class="{ danger: it.danger }"
+          @click="it.run(); closeMenu()"
+        >{{ it.label }}</button>
+      </div>
+    </template>
 
     <div class="env">
       <select
@@ -114,4 +169,16 @@ const METHOD_COLORS: Record<string, string> = {
 .env-gear { width: 26px; height: 26px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: var(--text-dim); }
 .env-gear:hover { background: var(--bg-hover); color: var(--text); }
 .env-gear svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+.ctx-overlay { position: fixed; inset: 0; z-index: 200; }
+.ctx-menu {
+  position: fixed; z-index: 201; min-width: 170px;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 4px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  display: flex; flex-direction: column;
+}
+.ctx-item { text-align: left; font-size: 12px; color: var(--text); padding: 7px 10px; border-radius: 5px; }
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item.danger { color: var(--danger); }
 </style>

@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 )
@@ -31,4 +32,27 @@ func (c *Client) Cookies(rawurl string) []Cookie {
 func (c *Client) ClearCookies() {
 	jar, _ := cookiejar.New(nil)
 	c.jar = jar
+}
+
+// SetCookie adds or overwrites a cookie. Caller supplies the URL the cookie
+// is scoped to; the jar derives domain/path from there. Used by the UI's
+// "manual cookie edit" affordance.
+func (c *Client) SetCookie(rawurl, name, value string) error {
+	u, err := url.Parse(rawurl)
+	if err != nil || c.jar == nil {
+		return err
+	}
+	c.jar.SetCookies(u, []*http.Cookie{{Name: name, Value: value, Path: "/"}})
+	return nil
+}
+
+// DeleteCookie unsets a cookie by name within the URL's scope. The stdlib jar
+// has no Delete API — we set the cookie to an empty value with MaxAge=-1.
+func (c *Client) DeleteCookie(rawurl, name string) error {
+	u, err := url.Parse(rawurl)
+	if err != nil || c.jar == nil {
+		return err
+	}
+	c.jar.SetCookies(u, []*http.Cookie{{Name: name, Value: "", Path: "/", MaxAge: -1}})
+	return nil
 }

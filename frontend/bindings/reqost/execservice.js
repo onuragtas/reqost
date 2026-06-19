@@ -16,6 +16,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as httpclient$0 from "./internal/httpclient/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as script$0 from "./internal/script/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -36,6 +39,16 @@ export function Cancel(reqId) {
  */
 export function ClearCookies() {
     return $Call.ByID(150933912);
+}
+
+/**
+ * DeleteCookie removes a cookie by name within the URL's scope.
+ * @param {string} url
+ * @param {string} name
+ * @returns {$CancellablePromise<void>}
+ */
+export function DeleteCookie(url, name) {
+    return $Call.ByID(2879512561, url, name);
 }
 
 /**
@@ -67,8 +80,50 @@ export function SendRequest(reqId, reqName, req, preScript, postScript) {
     }));
 }
 
+/**
+ * SetCookie adds or overwrites a cookie for the URL.
+ * @param {string} url
+ * @param {string} name
+ * @param {string} value
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetCookie(url, name, value) {
+    return $Call.ByID(229750378, url, name, value);
+}
+
+/**
+ * TryPreScript runs a pre-request script in isolation (no HTTP send) so the
+ * user can iterate on the script editor without burning real requests. Vars
+ * are echoed back as the script's mutation result; logs surface in the UI's
+ * test results panel.
+ * @param {string} src
+ * @param {{ [_ in string]?: string }} vars
+ * @returns {$CancellablePromise<script$0.Result>}
+ */
+export function TryPreScript(src, vars) {
+    return $Call.ByID(403487005, src, vars).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
+/**
+ * TryTestScript runs a test script against a frontend-provided response
+ * snapshot (typically the tab's last `response`). Returns the assertions +
+ * any console output. No HTTP fired.
+ * @param {string} src
+ * @param {{ [_ in string]?: string }} vars
+ * @param {script$0.ScriptResponse} resp
+ * @returns {$CancellablePromise<script$0.Result>}
+ */
+export function TryTestScript(src, vars, resp) {
+    return $Call.ByID(1622208978, src, vars, resp).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
 // Private type creation functions
 const $$createType0 = httpclient$0.Cookie.createFrom;
 const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = $models.SendResult.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = script$0.Result.createFrom;

@@ -6,6 +6,240 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+export class KV {
+    /**
+     * Creates a new KV instance.
+     * @param {Partial<KV>} [$$source = {}] - The source object to create the KV.
+     */
+    constructor($$source = {}) {
+        if (!("key" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["key"] = "";
+        }
+        if (!("value" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["value"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KV instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {KV}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new KV(/** @type {Partial<KV>} */($$parsedSource));
+    }
+}
+
+/**
+ * Result is the outcome of a script run.
+ */
+export class Result {
+    /**
+     * Creates a new Result instance.
+     * @param {Partial<Result>} [$$source = {}] - The source object to create the Result.
+     */
+    constructor($$source = {}) {
+        if (!("vars" in $$source)) {
+            /**
+             * possibly-mutated variable map
+             * @member
+             * @type {{ [_ in string]?: string }}
+             */
+            this["vars"] = {};
+        }
+        if (!("tests" in $$source)) {
+            /**
+             * from pm.test / tests{}
+             * @member
+             * @type {TestResult[]}
+             */
+            this["tests"] = [];
+        }
+        if (!("logs" in $$source)) {
+            /**
+             * console.log output
+             * @member
+             * @type {string[]}
+             */
+            this["logs"] = [];
+        }
+        if (!("error" in $$source)) {
+            /**
+             * uncaught top-level error, if any
+             * @member
+             * @type {string}
+             */
+            this["error"] = "";
+        }
+        if (!("request" in $$source)) {
+            /**
+             * mutated request (pre-request only)
+             * @member
+             * @type {ScriptRequest | null}
+             */
+            this["request"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Result instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {Result}
+     */
+    static createFrom($$source = {}) {
+        const $$createField0_0 = $$createType0;
+        const $$createField1_0 = $$createType2;
+        const $$createField2_0 = $$createType3;
+        const $$createField4_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("vars" in $$parsedSource) {
+            $$parsedSource["vars"] = $$createField0_0($$parsedSource["vars"]);
+        }
+        if ("tests" in $$parsedSource) {
+            $$parsedSource["tests"] = $$createField1_0($$parsedSource["tests"]);
+        }
+        if ("logs" in $$parsedSource) {
+            $$parsedSource["logs"] = $$createField2_0($$parsedSource["logs"]);
+        }
+        if ("request" in $$parsedSource) {
+            $$parsedSource["request"] = $$createField4_0($$parsedSource["request"]);
+        }
+        return new Result(/** @type {Partial<Result>} */($$parsedSource));
+    }
+}
+
+/**
+ * ScriptRequest is the mutable request a pre-request script can edit.
+ */
+export class ScriptRequest {
+    /**
+     * Creates a new ScriptRequest instance.
+     * @param {Partial<ScriptRequest>} [$$source = {}] - The source object to create the ScriptRequest.
+     */
+    constructor($$source = {}) {
+        if (!("method" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["method"] = "";
+        }
+        if (!("url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["url"] = "";
+        }
+        if (!("body" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["body"] = "";
+        }
+        if (!("headers" in $$source)) {
+            /**
+             * @member
+             * @type {KV[]}
+             */
+            this["headers"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ScriptRequest instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ScriptRequest}
+     */
+    static createFrom($$source = {}) {
+        const $$createField3_0 = $$createType7;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField3_0($$parsedSource["headers"]);
+        }
+        return new ScriptRequest(/** @type {Partial<ScriptRequest>} */($$parsedSource));
+    }
+}
+
+/**
+ * ScriptResponse is the read-only response a test script inspects.
+ */
+export class ScriptResponse {
+    /**
+     * Creates a new ScriptResponse instance.
+     * @param {Partial<ScriptResponse>} [$$source = {}] - The source object to create the ScriptResponse.
+     */
+    constructor($$source = {}) {
+        if (!("code" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["code"] = 0;
+        }
+        if (!("status" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["status"] = "";
+        }
+        if (!("responseTime" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["responseTime"] = 0;
+        }
+        if (!("body" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["body"] = "";
+        }
+        if (!("headers" in $$source)) {
+            /**
+             * @member
+             * @type {KV[]}
+             */
+            this["headers"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ScriptResponse instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ScriptResponse}
+     */
+    static createFrom($$source = {}) {
+        const $$createField4_0 = $$createType7;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("headers" in $$parsedSource) {
+            $$parsedSource["headers"] = $$createField4_0($$parsedSource["headers"]);
+        }
+        return new ScriptResponse(/** @type {Partial<ScriptResponse>} */($$parsedSource));
+    }
+}
+
 export class TestResult {
     /**
      * Creates a new TestResult instance.
@@ -47,3 +281,13 @@ export class TestResult {
         return new TestResult(/** @type {Partial<TestResult>} */($$parsedSource));
     }
 }
+
+// Private type creation functions
+const $$createType0 = $Create.Map($Create.Any, $Create.Any);
+const $$createType1 = TestResult.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = $Create.Array($Create.Any);
+const $$createType4 = ScriptRequest.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = KV.createFrom;
+const $$createType7 = $Create.Array($$createType6);

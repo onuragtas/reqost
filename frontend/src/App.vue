@@ -37,12 +37,13 @@ function registerGlobalCommands() {
   register({ id: 'theme.toggle',   label: 'Toggle theme (light/dark)', group: 'Appearance', run: toggleTheme })
 }
 
-// Cmd+K → command palette; Cmd+P → quick request switcher.
+// Cmd+K → command palette; Cmd+P → quick request switcher; Cmd+/ → settings.
 function onKey(e: KeyboardEvent) {
   if (!(e.metaKey || e.ctrlKey)) return
   const k = e.key.toLowerCase()
   if (k === 'k') { e.preventDefault(); openPalette('commands') }
   else if (k === 'p') { e.preventDefault(); openPalette('search') }
+  else if (k === '/') { e.preventDefault(); mode.value = 'settings' }
 }
 
 onMounted(() => {

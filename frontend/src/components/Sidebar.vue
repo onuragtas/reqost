@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { RecycleScroller } from 'vue-virtual-scroller'
 import { Events } from '@wailsio/runtime'
 import {
@@ -13,9 +13,28 @@ import { useTabs } from '../composables/useTabs'
 import { useRunner } from '../composables/useRunner'
 import { useDialog } from '../composables/useDialog'
 import { useEnv } from '../composables/useEnv'
+import { useFavorites } from '../composables/useFavorites'
 import { toCurl, parseCurl } from '../composables/curl'
 
 const { flatList, loadRoot, toggleNode, searchNodes, refreshNode, removeNode, reloadChildren } = useTree()
+const { isFav, toggle: toggleFav } = useFavorites()
+
+// ── Filter state ────────────────────────────────────────────────────────
+// methodFilter '' = no filter; otherwise method literal (GET, POST, …).
+// showOnlyFavorites overlays a star filter (request-only).
+const METHOD_FILTERS = ['', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+const methodFilter = ref<string>('')
+const showOnlyFavorites = ref(false)
+
+const visibleList = computed(() => {
+  if (!methodFilter.value && !showOnlyFavorites.value) return flatList.value
+  return flatList.value.filter(n => {
+    if (n.type === 'folder') return true   // folders always shown so structure stays
+    if (methodFilter.value && n.method !== methodFilter.value) return false
+    if (showOnlyFavorites.value && !isFav(n.id)) return false
+    return true
+  })
+})
 
 // ── Drag-and-drop reorder/move ─────────────────────────────────────────────
 type DropZone = 'before' | 'after' | 'into'
@@ -121,8 +140,14 @@ function openNodeMenu(e: MouseEvent, node: FlatNode) {
     )
   } else {
     items.push({ label: 'Copy as cURL', run: () => copyCurl(node) })
+    items.push({
+      label: isFav(node.id) ? '★ Remove from favorites' : '☆ Add to favorites',
+      run: () => toggleFav(node.id),
+    })
+    items.push({ label: `Copy reference: {{${node.name}.response.body.…}}`, run: () => copyText(`{{${node.name}.response.body.}}`) })
   }
   items.push(
+    { label: 'Copy ID', run: () => copyText(node.id) },
     { label: 'Duplicate', run: () => duplicate(node) },
     { label: 'Rename', run: () => rename(node) },
     { label: 'Delete', danger: true, run: () => remove(node) },
@@ -203,6 +228,14 @@ async function remove(node: FlatNode) {
   } catch (e) {
     flashError('Delete failed', e)
   }
+}
+
+async function copyText(s: string) {
+  try {
+    await navigator.clipboard.writeText(s)
+    statusMsg.value = 'Copied'
+    setTimeout(() => { if (statusMsg.value === 'Copied') statusMsg.value = '' }, 1200)
+  } catch { /* WKWebView occasionally blocks — silently ignore */ }
 }
 
 async function copyCurl(node: FlatNode) {
@@ -429,6 +462,20 @@ const METHOD_COLORS: Record<string, string> = {
       <button class="import-btn" title="New / Import / Export" @click="openHeaderMenu">+</button>
     </div>
 
+    <div class="filter-bar">
+      <button
+        v-for="m in METHOD_FILTERS" :key="m"
+        class="m-chip" :class="{ active: methodFilter === m, [m.toLowerCase()]: true }"
+        :title="m === '' ? 'All methods' : `Only ${m}`"
+        @click="methodFilter = (methodFilter === m ? '' : m)"
+      >{{ m || 'All' }}</button>
+      <button
+        class="m-chip fav" :class="{ active: showOnlyFavorites }"
+        title="Only favorites"
+        @click="showOnlyFavorites = !showOnlyFavorites"
+      >★</button>
+    </div>
+
     <div v-if="statusMsg" class="status">{{ statusMsg }}</div>
 
     <div v-if="!flatList.length && !searchQuery" class="hint">
@@ -438,9 +485,9 @@ const METHOD_COLORS: Record<string, string> = {
     </div>
 
     <RecycleScroller
-      v-show="flatList.length"
+      v-show="visibleList.length"
       class="scroller"
-      :items="flatList"
+      :items="visibleList"
       :item-size="28"
       key-field="id"
       v-slot="{ item }"
@@ -484,6 +531,11 @@ const METHOD_COLORS: Record<string, string> = {
           >{{ item.method }}</span>
         </span>
         <span class="name">{{ item.name }}</span>
+        <span
+          v-if="item.type === 'request' && isFav(item.id)"
+          class="fav-mark"
+          title="Favorite"
+        >★</span>
       </div>
     </RecycleScroller>
 
@@ -539,6 +591,34 @@ const METHOD_COLORS: Record<string, string> = {
   padding: 2px 9px;
 }
 .import-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+.filter-bar {
+  display: flex; gap: 4px; padding: 0 8px 6px; flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.m-chip {
+  font: 700 9px monospace; padding: 2px 7px; border-radius: 10px;
+  background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+.m-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.m-chip.active { color: var(--text); background: var(--bg-elevated); border-color: var(--accent); }
+.m-chip.get    { --c: #61affe; }
+.m-chip.post   { --c: #49cc90; }
+.m-chip.put    { --c: #fca130; }
+.m-chip.patch  { --c: #50e3c2; }
+.m-chip.delete { --c: #f93e3e; }
+.m-chip.active.get,
+.m-chip.active.post,
+.m-chip.active.put,
+.m-chip.active.patch,
+.m-chip.active.delete {
+  color: var(--c, var(--accent)); border-color: var(--c, var(--accent));
+}
+.m-chip.fav { color: var(--text-faint); font-size: 11px; padding: 1px 8px; }
+.m-chip.fav.active { color: var(--accent); border-color: var(--accent); }
+
+.fav-mark { font-size: 10px; color: var(--accent); margin-left: 4px; flex-shrink: 0; }
 
 .status {
   font-size: 11px;

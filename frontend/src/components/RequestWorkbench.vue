@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { SendRequest, Cancel, GetCookies, ClearCookies } from '../../bindings/reqost/execservice'
+import { SendRequest, Cancel, GetCookies, ClearCookies, SetCookie, DeleteCookie } from '../../bindings/reqost/execservice'
 import { SaveRequest } from '../../bindings/reqost/collectionservice'
 import { useTabs, toDetail, markClean, isDirty, type ReqSubTab, type ResSubTab, type AuthType, type BodyType } from '../composables/useTabs'
 import { useEnv } from '../composables/useEnv'
@@ -8,6 +8,10 @@ import { useHistory } from '../composables/useHistory'
 import { useTree } from '../composables/useTree'
 import { useSettings } from '../composables/useSettings'
 import { resolveAncestorContext } from '../composables/useFolderContext'
+import { signJwt } from '../composables/jwt'
+import { SNIPPETS } from '../composables/scriptSnippets'
+import { TryPreScript, TryTestScript } from '../../bindings/reqost/execservice'
+import { statusPhrase, statusHint } from '../composables/httpStatus'
 import { useDialog } from '../composables/useDialog'
 import { parseQuery, buildUrl, baseOf } from '../composables/url'
 import { parseCurl, toCurl } from '../composables/curl'
@@ -43,12 +47,27 @@ const mode = computed<'http' | 'ws' | 'grpc' | 'sse'>(() => {
 
 const BODY_TYPES: { id: BodyType; label: string }[] = [
   { id: 'none', label: 'None' },
-  { id: 'raw', label: 'Raw' },
   { id: 'json', label: 'JSON' },
+  { id: 'xml', label: 'XML' },
+  { id: 'html', label: 'HTML' },
+  { id: 'javascript', label: 'JavaScript' },
+  { id: 'text', label: 'Text' },
+  { id: 'raw', label: 'Raw (no Content-Type)' },
   { id: 'urlencoded', label: 'x-www-form-urlencoded' },
   { id: 'formdata', label: 'form-data' },
   { id: 'graphql', label: 'GraphQL' },
+  { id: 'binary', label: 'Binary file' },
 ]
+
+// Body type → Content-Type for the Postman-style sub-types. Applied at send
+// time when the user hasn't set their own Content-Type header.
+const BODY_CONTENT_TYPE: Record<string, string> = {
+  json: 'application/json',
+  xml:  'application/xml',
+  html: 'text/html',
+  javascript: 'application/javascript',
+  text: 'text/plain',
+}
 
 const saving = ref(false)
 const savedFlash = ref(false)
@@ -99,9 +118,15 @@ async function maybeCloseActive() {
 }
 function onKeyDown(e: KeyboardEvent) {
   if (!e.metaKey && !e.ctrlKey) return
+  if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); sendAndSave(); return }
   if (e.key === 'Enter') { e.preventDefault(); send() }
   else if (e.key === 's') { e.preventDefault(); save() }
   else if (e.key === 'w') { e.preventDefault(); maybeCloseActive() }
+}
+
+async function sendAndSave() {
+  await send()
+  if (active.value && !active.value.sendError) await save()
 }
 onMounted(() => window.addEventListener('keydown', onKeyDown))
 onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
@@ -119,6 +144,8 @@ const AUTH_TYPES: { id: AuthType; label: string }[] = [
   { id: 'basic', label: 'Basic Auth' },
   { id: 'apikey', label: 'API Key' },
   { id: 'oauth2', label: 'OAuth 2.0' },
+  { id: 'jwt',    label: 'JWT Bearer' },
+  { id: 'digest', label: 'Digest Auth' },
 ]
 
 const REQ_TABS: { id: ReqSubTab; label: string; soon?: boolean }[] = [
@@ -251,14 +278,24 @@ async function send() {
   t.sending = true
   t.sendError = ''
   t.response = null
-  // GraphQL is sent as a JSON {query, variables} POST body.
+  // GraphQL is sent as a JSON {query, variables} POST body. Sub-types
+  // (json/xml/html/javascript/text) collapse to `raw` on the wire and set the
+  // matching Content-Type unless the user already chose one.
   let body = t.body
   let bodyType: string = t.bodyType
+  let autoContentType = ''
   if (t.bodyType === 'graphql') {
     let vars: any = {}
     try { vars = t.graphqlVars.trim() ? JSON.parse(t.graphqlVars) : {} } catch { /* send empty vars */ }
     body = JSON.stringify({ query: t.body, variables: vars })
     bodyType = 'json'
+    autoContentType = 'application/json'
+  } else if (BODY_CONTENT_TYPE[t.bodyType]) {
+    autoContentType = BODY_CONTENT_TYPE[t.bodyType]
+    bodyType = t.bodyType === 'json' ? 'json' : 'raw'
+  } else if (t.bodyType === 'binary') {
+    bodyType = 'binary'
+    autoContentType = 'application/octet-stream'
   }
 
   // Merge folder-level inherited headers + auth. Child overrides: the
@@ -271,9 +308,29 @@ async function send() {
     ...inheritedHeaders.filter(h => !ownHeaderKeys.has(h.key.toLowerCase())),
     ...t.headers.filter(h => h.key.trim()),
   ]
+  // Auto Content-Type: only when the user hasn't pinned their own.
+  if (autoContentType && !ownHeaderKeys.has('content-type')
+      && !inheritedHeaders.some(h => h.key.toLowerCase() === 'content-type')) {
+    mergedHeaders.push({ key: 'Content-Type', value: autoContentType, enabled: true })
+  }
   // OAuth 2 was already resolved to a bearer access token in the Auth tab —
   // the transport layer only understands bearer/basic/apikey, so map it.
-  const ownAuth = t.auth.type === 'oauth2' && t.auth.token
+  // JWT: sign right before send so iat/exp claims pick up the current clock.
+  if (t.auth.type === 'jwt' && t.auth.jwtSecret) {
+    try {
+      t.auth.token = await signJwt(
+        (t.auth.jwtAlgo ?? 'HS256') as 'HS256',
+        t.auth.jwtSecret,
+        t.auth.jwtClaims ?? '{}',
+      )
+    } catch (e: any) {
+      t.sendError = `JWT sign: ${e?.message ?? e}`
+      t.sending = false
+      return
+    }
+  }
+
+  const ownAuth = (t.auth.type === 'oauth2' || t.auth.type === 'jwt') && t.auth.token
     ? { ...t.auth, type: 'bearer' as const }
     : (t.auth.type === 'none' ? null : { ...t.auth })
   const mergedAuth = (!ownAuth && ancestor.auth) ? ancestor.auth : ownAuth
@@ -295,7 +352,8 @@ async function send() {
       bodyType,
       formFields: t.formFields.filter(f => f.key.trim()),
       auth: mergedAuth,
-      variables: activeVars.value,
+      // Tab vars (G5) shadow the active environment for this send only.
+      variables: { ...activeVars.value, ...t.tabVars },
       timeoutMs,
       disableRedirect: !followRedirects,
       maxRedirects,
@@ -341,6 +399,28 @@ async function clearCookies() {
   await ClearCookies()
   await loadCookies()
 }
+const newCookieName = ref('')
+const newCookieValue = ref('')
+async function addCookie() {
+  const t = active.value
+  if (!t?.url || !newCookieName.value.trim()) return
+  await SetCookie(t.url.trim(), newCookieName.value.trim(), newCookieValue.value)
+  newCookieName.value = ''
+  newCookieValue.value = ''
+  await loadCookies()
+}
+async function saveCookie(name: string, value: string) {
+  const t = active.value
+  if (!t?.url) return
+  await SetCookie(t.url.trim(), name, value)
+  await loadCookies()
+}
+async function deleteCookie(name: string) {
+  const t = active.value
+  if (!t?.url) return
+  await DeleteCookie(t.url.trim(), name)
+  await loadCookies()
+}
 watch(() => active.value?.resSubTab, (tab) => { if (tab === 'cookies') loadCookies() })
 function cancel() {
   if (active.value) Cancel(active.value.id)
@@ -373,6 +453,82 @@ function fmtSize(n: number) {
   return `${(n / 1048576).toFixed(2)} MB`
 }
 function fmtMs(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms` }
+
+function bodyEditorLang(bt: string): 'json' | 'javascript' | 'xml' | 'plain' {
+  if (bt === 'json') return 'json'
+  if (bt === 'javascript') return 'javascript'
+  if (bt === 'xml' || bt === 'html') return 'xml'
+  return 'plain'
+}
+
+// ── Path Variables (G2) ────────────────────────────────────────────────
+// URL'de :foo (Express tarzı) ve {bar} (OpenAPI tarzı) kalıplarını yakala.
+// Kullanıcı bunlara değer girdiğinde URL'i tek-yön replace ederek günceller —
+// böylece query params editor'ün double-write çakışmaları yaşamaz.
+const PATH_VAR_RE = /:([A-Za-z_][\w-]*)|\{([A-Za-z_][\w-]*)\}/g
+const pathVariables = computed(() => {
+  const url = active.value?.url ?? ''
+  const seen = new Set<string>()
+  const out: string[] = []
+  let m: RegExpExecArray | null
+  PATH_VAR_RE.lastIndex = 0
+  while ((m = PATH_VAR_RE.exec(url))) {
+    const name = m[1] ?? m[2]
+    if (name && !seen.has(name)) { seen.add(name); out.push(name) }
+  }
+  return out
+})
+const pathVarMap = ref<Record<string, string>>({})
+function setPathVar(name: string, value: string) {
+  if (!active.value) return
+  pathVarMap.value = { ...pathVarMap.value, [name]: value }
+  // Replace every concrete occurrence ({name} OR :name) when the user types
+  // something. Empty string clears the binding but leaves the URL alone.
+  if (value === '') return
+  let next = active.value.url
+  next = next.replace(new RegExp(`\\{${name}\\}`, 'g'), encodeURIComponent(value))
+  next = next.replace(new RegExp(`:${name}(?=/|$|\\?)`, 'g'), encodeURIComponent(value))
+  if (next !== active.value.url) active.value.url = next
+}
+
+// ── Response actions (G8) ───────────────────────────────────────────────
+const copiedBody = ref(false)
+async function copyResponseBody() {
+  const t = active.value
+  if (!t?.response?.body) return
+  try {
+    await navigator.clipboard.writeText(t.response.body)
+    copiedBody.value = true
+    setTimeout(() => (copiedBody.value = false), 1200)
+  } catch { /* clipboard blocked */ }
+}
+function downloadResponseBody() {
+  const t = active.value
+  if (!t?.response?.body) return
+  // Heuristic filename: last URL segment + content-type-driven extension.
+  const ct = (t.response.headers ?? []).find((h: any) => h.key.toLowerCase() === 'content-type')?.value ?? ''
+  let ext = 'txt'
+  if (ct.includes('json')) ext = 'json'
+  else if (ct.includes('xml')) ext = 'xml'
+  else if (ct.includes('html')) ext = 'html'
+  else if (ct.includes('csv')) ext = 'csv'
+  else if (ct.includes('image/png')) ext = 'png'
+  else if (ct.includes('image/jpeg')) ext = 'jpg'
+  else if (ct.includes('pdf')) ext = 'pdf'
+
+  let base = 'response'
+  try {
+    const u = new URL(t.url.replace(/{{[^}]+}}/g, 'x'))
+    const seg = u.pathname.split('/').filter(Boolean).pop() || u.host
+    if (seg) base = seg.replace(/\.[^/.]+$/, '')
+  } catch { /* keep default */ }
+
+  const blob = new Blob([t.response.body], { type: ct || 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = `${base}.${ext}`; a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ── Request / Response split ───────────────────────────────────────────────
 // Persisted between sessions so the user gets the layout they trained on.
@@ -522,6 +678,68 @@ async function loadGqlSchema() {
     gqlSchemaError.value = e?.message ?? String(e)
   } finally {
     gqlLoadingSchema.value = false
+  }
+}
+
+// ── Per-tab vars (G5) ───────────────────────────────────────────────────
+const newTabVarKey = ref('')
+const newTabVarVal = ref('')
+function addTabVar() {
+  const t = active.value
+  if (!t) return
+  const k = newTabVarKey.value.trim()
+  if (!k) return
+  t.tabVars = { ...t.tabVars, [k]: newTabVarVal.value }
+  newTabVarKey.value = ''
+  newTabVarVal.value = ''
+}
+
+// ── Script snippets + Try (G4) ──────────────────────────────────────────
+const PRE_SNIPPETS  = SNIPPETS.filter(s => s.kind === 'pre')
+const TEST_SNIPPETS = SNIPPETS.filter(s => s.kind === 'test')
+const trying = ref(false)
+
+function insertSnippet(kind: 'pre' | 'test', e: Event) {
+  const sel = e.target as HTMLSelectElement
+  const id = sel.value
+  if (!id || !active.value) { sel.value = ''; return }
+  const snippet = SNIPPETS.find(s => s.id === id)
+  if (!snippet) { sel.value = ''; return }
+  const field = kind === 'pre' ? 'preScript' : 'postScript'
+  const cur = active.value[field] || ''
+  active.value[field] = cur + (cur.endsWith('\n') || cur === '' ? '' : '\n\n') + snippet.code
+  sel.value = ''
+}
+
+async function tryScript(kind: 'pre' | 'test') {
+  const t = active.value
+  if (!t) return
+  trying.value = true
+  try {
+    if (kind === 'pre') {
+      const res: any = await TryPreScript(t.preScript, activeVars.value)
+      t.tests = res?.tests ?? []
+      t.logs  = res?.logs ?? []
+      if (res?.error) t.logs = [...t.logs, `⚠ ${res.error}`]
+      t.resSubTab = 'testResults'
+    } else {
+      if (!t.response) return
+      const snap = {
+        code: t.response.status,
+        status: t.response.statusText,
+        responseTime: t.response.timing?.totalMs ?? 0,
+        body: t.response.body ?? '',
+        headers: (t.response.headers ?? []).map((h: any) => ({ key: h.key, value: h.value })),
+      }
+      const res: any = await TryTestScript(t.postScript, activeVars.value, snap)
+      t.tests = res?.tests ?? []
+      t.logs  = res?.logs ?? []
+      if (res?.error) t.logs = [...t.logs, `⚠ ${res.error}`]
+      if (res?.vars)  applyVars(res.vars)
+      t.resSubTab = 'testResults'
+    }
+  } finally {
+    trying.value = false
   }
 }
 
@@ -722,8 +940,23 @@ function onSetVerifySSL(s: string) {
           </div>
 
           <div class="subpanel selectable">
-            <!-- Params -->
+            <!-- Params + Path Variables (G2) -->
             <div v-if="active.reqSubTab === 'params'" class="kv">
+              <template v-if="pathVariables.length">
+                <div class="pv-head">Path Variables ({{ pathVariables.length }})</div>
+                <div v-for="(name, i) in pathVariables" :key="`pv-${i}-${name}`" class="kv-row">
+                  <span class="pv-key">:{{ name }}</span>
+                  <input
+                    :value="pathVarMap[name] ?? ''"
+                    placeholder="value"
+                    class="kv-val"
+                    @input="setPathVar(name, ($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+                <div class="pv-sep"></div>
+              </template>
+
+              <div class="pv-head">Query Params</div>
               <div v-for="(p, i) in active.params" :key="i" class="kv-row">
                 <input type="checkbox" v-model="p.enabled" @change="syncUrl" />
                 <input v-model="p.key" placeholder="Key" class="kv-key" @input="syncUrl" @mouseenter="showVarHint($event, p.key)" @mouseleave="hideVarHint" />
@@ -794,7 +1027,31 @@ function onSetVerifySSL(s: string) {
                   <span v-if="oauthError" class="err">⚠ {{ oauthError }}</span>
                 </div>
               </template>
-              <p v-if="active.auth.type !== 'none' && active.auth.type !== 'oauth2'" class="hint">{{ VAR_HINT }}</p>
+              <template v-else-if="active.auth.type === 'jwt'">
+                <div class="oauth-grid">
+                  <label>Algorithm</label>
+                  <select v-model="active.auth.jwtAlgo" class="auth-in">
+                    <option value="HS256">HS256</option>
+                    <option value="HS384">HS384</option>
+                    <option value="HS512">HS512</option>
+                  </select>
+                  <label>Secret</label>
+                  <input v-model="active.auth.jwtSecret" type="password" class="auth-in" placeholder="HMAC key" />
+                  <label>Claims (JSON)</label>
+                  <textarea
+                    v-model="active.auth.jwtClaims" class="auth-in" rows="5"
+                    placeholder='{"sub":"123","exp":1700000000}'
+                    style="font-family: monospace; resize: vertical;"
+                  />
+                </div>
+                <p class="hint">Token is signed on every send. <code>iat</code> auto-stamps if omitted.</p>
+              </template>
+              <template v-else-if="active.auth.type === 'digest'">
+                <input v-model="active.auth.username" class="auth-in" placeholder="Username" />
+                <input v-model="active.auth.password" type="password" class="auth-in" placeholder="Password" />
+                <p class="hint">First request fires unauthenticated; the 401 challenge drives a transparent retry with the Digest header. MD5 + SHA-256 supported, qop=auth.</p>
+              </template>
+              <p v-if="active.auth.type !== 'none' && active.auth.type !== 'oauth2' && active.auth.type !== 'jwt' && active.auth.type !== 'digest'" class="hint">{{ VAR_HINT }}</p>
             </div>
 
             <!-- Headers -->
@@ -840,13 +1097,21 @@ function onSetVerifySSL(s: string) {
               </div>
               <div v-if="active.bodyType === 'none'" class="soon"><span>This request has no body</span></div>
               <EditorPane
-                v-else-if="active.bodyType === 'raw' || active.bodyType === 'json'"
+                v-else-if="['raw','json','xml','html','javascript','text'].includes(active.bodyType)"
                 v-model="active.body"
-                :language="active.bodyType === 'json' ? 'json' : 'plain'"
+                :language="bodyEditorLang(active.bodyType)"
                 :vars="activeVars"
                 placeholder="Request body…"
                 min-height="180px"
               />
+              <div v-else-if="active.bodyType === 'binary'" class="binary-body">
+                <label>File path</label>
+                <input
+                  v-model="active.body" class="binary-path"
+                  placeholder="/absolute/path/to/file.bin"
+                />
+                <p class="hint">Sent as raw <code>application/octet-stream</code>. File is read on send.</p>
+              </div>
               <div v-else-if="active.bodyType === 'graphql'" class="gql">
                 <div class="gql-toolbar">
                   <span class="gql-label">Query</span>
@@ -885,17 +1150,38 @@ function onSetVerifySSL(s: string) {
             </div>
 
             <!-- Pre-request script -->
-            <EditorPane
-              v-else-if="active.reqSubTab === 'prereq'"
-              v-model="active.preScript" language="javascript" min-height="200px"
-              placeholder="// Pre-request (JavaScript)"
-            />
+            <div v-else-if="active.reqSubTab === 'prereq'" class="script-pane">
+              <div class="script-toolbar">
+                <select class="snippet-sel" @change="insertSnippet('pre', $event)" :value="''">
+                  <option value="">+ Insert snippet…</option>
+                  <option v-for="s in PRE_SNIPPETS" :key="s.id" :value="s.id">{{ s.label }}</option>
+                </select>
+                <button class="try-btn" :disabled="trying" @click="tryScript('pre')">
+                  {{ trying ? '…' : '▶ Try' }}
+                </button>
+              </div>
+              <EditorPane
+                v-model="active.preScript" language="javascript" min-height="180px"
+                placeholder="// Pre-request (JavaScript)"
+              />
+            </div>
             <!-- Test script -->
-            <EditorPane
-              v-else-if="active.reqSubTab === 'tests'"
-              v-model="active.postScript" language="javascript" min-height="200px"
-              placeholder="// Tests (JavaScript)"
-            />
+            <div v-else-if="active.reqSubTab === 'tests'" class="script-pane">
+              <div class="script-toolbar">
+                <select class="snippet-sel" @change="insertSnippet('test', $event)" :value="''">
+                  <option value="">+ Insert snippet…</option>
+                  <option v-for="s in TEST_SNIPPETS" :key="s.id" :value="s.id">{{ s.label }}</option>
+                </select>
+                <button class="try-btn" :disabled="trying || !active.response" @click="tryScript('test')">
+                  {{ trying ? '…' : '▶ Try' }}
+                </button>
+                <span v-if="!active.response" class="hint try-hint">Send first to populate response</span>
+              </div>
+              <EditorPane
+                v-model="active.postScript" language="javascript" min-height="180px"
+                placeholder="// Tests (JavaScript)"
+              />
+            </div>
 
             <!-- Examples -->
             <div v-else-if="active.reqSubTab === 'examples'" class="examples-pane">
@@ -959,6 +1245,22 @@ function onSetVerifySSL(s: string) {
                 </select>
               </div>
               <p class="hint">Per-request values override the global defaults from the Settings sidebar.</p>
+
+              <div class="gql-label" style="margin-top: 16px">Tab variables (override active environment)</div>
+              <div class="tabvars-list">
+                <div v-for="(_, k, i) in active.tabVars" :key="`${k}-${i}`" class="kv-row">
+                  <input :value="k" placeholder="key" class="kv-key" readonly />
+                  <input :value="active.tabVars[k]" placeholder="value" class="kv-val"
+                         @input="active.tabVars[k] = ($event.target as HTMLInputElement).value" />
+                  <button class="kv-del" @click="delete active.tabVars[k]">✕</button>
+                </div>
+                <div class="kv-row">
+                  <input v-model="newTabVarKey" placeholder="new key" class="kv-key" />
+                  <input v-model="newTabVarVal" placeholder="value" class="kv-val" @keyup.enter="addTabVar" />
+                  <button class="kv-del" @click="addTabVar">+</button>
+                </div>
+              </div>
+              <p class="hint">Active only for this tab. Higher precedence than the active environment.</p>
 
               <div class="gql-label" style="margin-top: 16px">Description</div>
               <textarea v-model="active.description" class="body-area" spellcheck="false" placeholder="Notes / documentation for this request…" />
@@ -1025,9 +1327,9 @@ function onSetVerifySSL(s: string) {
 
           <template v-else-if="active.response">
             <div class="res-bar">
-              <span class="status" :style="{ color: statusColor }">
+              <span class="status" :style="{ color: statusColor }" :title="statusHint(active.response.status)">
                 <span class="dot" :style="{ background: statusColor }"></span>
-                {{ active.response.status }} {{ active.response.statusText }}
+                {{ active.response.status }} {{ active.response.statusText || statusPhrase(active.response.status) }}
               </span>
               <span class="meta timing-meta" :title="timingTooltip(active.response.timing)">
                 {{ fmtMs(active.response.timing.totalMs) }}
@@ -1041,6 +1343,14 @@ function onSetVerifySSL(s: string) {
                 </svg>
               </span>
               <span class="meta">{{ fmtSize(active.response.sizeBytes) }}</span>
+              <button class="save-ex icon-btn" :title="'Copy response body'" @click="copyResponseBody">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2" y="2" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+                <span v-if="copiedBody">Copied</span><span v-else>Copy</span>
+              </button>
+              <button class="save-ex icon-btn" title="Save response body to file" @click="downloadResponseBody">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v9M5 8l3 3 3-3M3 13h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Save
+              </button>
               <button class="save-ex" title="Save this response as an example" @click="saveAsExample">
                 ★ Save as example
               </button>
@@ -1101,8 +1411,16 @@ function onSetVerifySSL(s: string) {
                 <button v-if="cookies.length" class="clear-ck" @click="clearCookies">Clear all</button>
               </div>
               <div v-if="!cookies.length" class="soon"><span>No cookies stored for this URL</span></div>
-              <div v-for="(c, i) in cookies" :key="i" class="rh">
-                <span class="rh-k">{{ c.name }}</span><span class="rh-v">{{ c.value }}</span>
+              <div v-for="(c, i) in cookies" :key="i" class="ck-row">
+                <input class="ck-name" :value="c.name" readonly />
+                <input class="ck-val" v-model="cookies[i].value" />
+                <button class="ck-save" title="Save" @click="saveCookie(c.name, cookies[i].value)">✓</button>
+                <button class="ck-del" title="Delete" @click="deleteCookie(c.name)">✕</button>
+              </div>
+              <div class="ck-new">
+                <input class="ck-name" v-model="newCookieName" placeholder="name" />
+                <input class="ck-val" v-model="newCookieValue" placeholder="value" />
+                <button class="ck-save" @click="addCookie">+ Add</button>
               </div>
             </div>
             <div v-else-if="active.resSubTab === 'testResults'" class="tests selectable">
@@ -1291,6 +1609,8 @@ function onSetVerifySSL(s: string) {
   padding: 3px 8px; margin-left: 4px;
 }
 .save-ex:hover { color: var(--accent); border-color: var(--accent); }
+.icon-btn { display: inline-flex; align-items: center; gap: 4px; }
+.icon-btn svg { width: 13px; height: 13px; }
 .examples-pane { flex: 1; display: flex; flex-direction: column; min-height: 100px; }
 .ex-list { display: flex; flex-direction: column; gap: 4px; }
 .ex-row {
@@ -1324,6 +1644,26 @@ function onSetVerifySSL(s: string) {
 .kv-mode { font-size: 10px; padding: 3px 8px; color: var(--text-faint); border-radius: 4px; }
 .kv-mode:hover { color: var(--text-dim); }
 .kv-mode.active { color: var(--text); background: var(--bg-input); }
+.pv-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); padding: 4px 0 2px; }
+.pv-key { font: 700 12px monospace; color: var(--accent); padding: 0 4px; }
+.pv-sep { border-top: 1px dashed var(--border); margin: 8px 0; }
+.binary-body { display: flex; flex-direction: column; gap: 6px; max-width: 480px; }
+.binary-body label { font-size: 11px; color: var(--text-dim); }
+.binary-path {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font: 12px monospace; padding: 7px 10px;
+}
+.binary-path:focus { outline: none; border-color: var(--accent); }
+.script-pane { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+.script-toolbar { display: flex; gap: 8px; align-items: center; }
+.snippet-sel { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); font-size: 11px; padding: 4px 6px; max-width: 240px; }
+.snippet-sel:focus { outline: none; border-color: var(--accent); }
+.try-btn {
+  background: var(--accent); color: var(--accent-text);
+  font-weight: 600; font-size: 11px; padding: 4px 12px; border-radius: 5px;
+}
+.try-btn:disabled { opacity: 0.45; cursor: default; }
+.try-hint { font-size: 10px; color: var(--text-faint); }
 .kv-row { display: flex; align-items: center; gap: 6px; }
 .kv-key, .kv-val { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font: 12px monospace; padding: 5px 8px; }
 .kv-key { width: 34%; } .kv-val { flex: 1; }
@@ -1386,6 +1726,14 @@ function onSetVerifySSL(s: string) {
 .cookies-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-faint); padding-bottom: 6px; }
 .clear-ck { color: var(--danger); font-size: 11px; padding: 3px 8px; border-radius: 4px; }
 .clear-ck:hover { background: var(--bg-hover); }
+.ck-row, .ck-new { display: grid; grid-template-columns: 180px 1fr 26px 26px; gap: 6px; padding: 3px 0; }
+.ck-new { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 8px; }
+.ck-name, .ck-val { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font: 11px monospace; padding: 4px 6px; }
+.ck-name { color: var(--text-dim); }
+.ck-name:focus, .ck-val:focus { outline: none; border-color: var(--accent); }
+.ck-save, .ck-del { font-size: 12px; border-radius: 3px; padding: 0 4px; }
+.ck-save { color: var(--ok); } .ck-save:hover { background: var(--bg-hover); }
+.ck-del { color: var(--danger); } .ck-del:hover { background: var(--bg-hover); }
 .tests { flex: 1; overflow: auto; padding: 10px 16px; }
 .test-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
 .test-badge { font: 700 9px monospace; padding: 2px 6px; border-radius: 4px; background: var(--ok); color: #06140d; flex-shrink: 0; }

@@ -18,7 +18,7 @@ export class Auth {
     constructor($$source = {}) {
         if (!("type" in $$source)) {
             /**
-             * "none" | "bearer" | "basic" | "apikey"
+             * "none" | "bearer" | "basic" | "apikey" | "jwt" | "digest"
              * @member
              * @type {string}
              */
@@ -26,7 +26,7 @@ export class Auth {
         }
         if (!("token" in $$source)) {
             /**
-             * bearer
+             * bearer (and pre-baked JWT once we mint it client-side)
              * @member
              * @type {string}
              */
@@ -34,7 +34,7 @@ export class Auth {
         }
         if (!("username" in $$source)) {
             /**
-             * basic
+             * basic / digest
              * @member
              * @type {string}
              */
@@ -42,7 +42,7 @@ export class Auth {
         }
         if (!("password" in $$source)) {
             /**
-             * basic
+             * basic / digest
              * @member
              * @type {string}
              */
@@ -63,6 +63,32 @@ export class Auth {
              * @type {string}
              */
             this["value"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * JWT-specific. The frontend builds the actual token and assigns it to
+             * `Token`; these are kept on the struct so a re-send can refresh the
+             * token if the caller wants to (e.g. when `iat`/`exp` drift).
+             * "HS256" | "HS384" | "HS512"
+             * @member
+             * @type {string | undefined}
+             */
+            this["jwtAlgo"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["jwtSecret"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * JSON payload
+             * @member
+             * @type {string | undefined}
+             */
+            this["jwtClaims"] = undefined;
         }
 
         Object.assign(this, $$source);

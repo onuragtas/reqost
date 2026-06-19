@@ -7,12 +7,17 @@ import { useUpdate } from '../composables/useUpdate'
 import { RepoSlug } from '../../bindings/reqost/updateservice'
 import { List as ListPlugins, SetEnabled as SetPluginEnabled, Dir as PluginDir } from '../../bindings/reqost/pluginservice'
 
-const { theme, toggle } = useTheme()
+const { pref, fontSize, setPref, setFontSize } = useTheme()
+const showShortcuts = ref(false)
 const { settings, reset } = useSettings()
 const { version, updateInfo, applying, applied, checkError, install } = useUpdate()
 
 const repoSlug = ref<string>('')
 const showNotes = ref(false)
+
+// `{{` can't appear literally inside a template — Vue's tokenizer treats it
+// as the start of an interpolation. Keep it as a script const and bind it.
+const KBD_OPEN_VAR = '{{'
 
 const plugins = ref<any[]>([])
 const pluginDir = ref<string>('')
@@ -42,7 +47,23 @@ function openReleases() {
       <h4>Appearance</h4>
       <div class="row">
         <label>Theme</label>
-        <button class="pill" @click="toggle">{{ theme === 'dark' ? 'Dark' : 'Light' }}</button>
+        <div class="seg">
+          <button :class="{ active: pref === 'light' }"  @click="setPref('light')">Light</button>
+          <button :class="{ active: pref === 'dark' }"   @click="setPref('dark')">Dark</button>
+          <button :class="{ active: pref === 'system' }" @click="setPref('system')">System</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>Font size</label>
+        <input
+          type="range" min="10" max="20" step="1"
+          :value="fontSize" @input="setFontSize(Number(($event.target as HTMLInputElement).value))"
+        />
+        <span class="font-val">{{ fontSize }}px</span>
+      </div>
+      <div class="row">
+        <label>Keyboard shortcuts</label>
+        <button class="pill" @click="showShortcuts = true">Show cheat sheet</button>
       </div>
     </section>
 
@@ -133,6 +154,43 @@ function openReleases() {
       <p class="hint">reqost — fast Postman-style API client for very large collections.</p>
       <button class="ghost" @click="reset">Reset to defaults</button>
     </section>
+
+    <!-- Keyboard shortcuts cheat sheet -->
+    <div v-if="showShortcuts" class="cheat-overlay" @click.self="showShortcuts = false">
+      <div class="cheat">
+        <header class="cheat-head">
+          <span>Keyboard shortcuts</span>
+          <button class="cheat-close" @click="showShortcuts = false">✕</button>
+        </header>
+        <div class="cheat-body">
+          <div class="cheat-group">
+            <h5>Global</h5>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>K</kbd><span>Command palette</span></div>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>P</kbd><span>Quick request switcher</span></div>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>/</kbd><span>This cheat sheet</span></div>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>\</kbd><span>Cycle request / response split</span></div>
+          </div>
+          <div class="cheat-group">
+            <h5>Request</h5>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>↵</kbd><span>Send</span></div>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>↵</kbd><span>Send &amp; Save</span></div>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>S</kbd><span>Save</span></div>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>W</kbd><span>Close tab</span></div>
+          </div>
+          <div class="cheat-group">
+            <h5>Tabs</h5>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>1</kbd>…<kbd>9</kbd><span>Switch to nth tab</span></div>
+            <div class="kbd-row"><kbd>Middle-click</kbd><span>Close tab</span></div>
+            <div class="kbd-row"><kbd>Right-click</kbd><span>Close Others / Right / All</span></div>
+          </div>
+          <div class="cheat-group">
+            <h5>Editor</h5>
+            <div class="kbd-row"><kbd>⌘</kbd><kbd>F</kbd><span>Find in body / response</span></div>
+            <div class="kbd-row"><kbd>{{ KBD_OPEN_VAR }}</kbd><span>Variable autocomplete</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </aside>
 </template>
 
@@ -206,6 +264,27 @@ function openReleases() {
 .plugin-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .plugin-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; background: var(--bg-input); border-radius: 4px; }
 .plugin-name { font: 12px monospace; color: var(--text); flex: 1; word-break: break-all; }
+.seg { display: inline-flex; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; overflow: hidden; }
+.seg button { font-size: 11px; padding: 3px 9px; color: var(--text-dim); border-radius: 0; }
+.seg button:hover { color: var(--text); background: var(--bg-hover); }
+.seg button.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.font-val { font: 11px monospace; color: var(--text-dim); min-width: 32px; text-align: right; }
+input[type=range] { accent-color: var(--accent); width: 110px; }
+.cheat-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 300; }
+.cheat { width: 520px; max-width: 92vw; max-height: 80vh; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); overflow: hidden; display: flex; flex-direction: column; }
+.cheat-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; color: var(--text); }
+.cheat-close { color: var(--text-faint); font-size: 14px; padding: 2px 6px; }
+.cheat-close:hover { color: var(--text); }
+.cheat-body { padding: 14px 18px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+.cheat-group h5 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); margin-bottom: 6px; }
+.kbd-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12px; color: var(--text-dim); }
+.kbd-row span { margin-left: 6px; color: var(--text); }
+kbd {
+  font: 600 11px monospace; color: var(--text);
+  background: var(--bg-input); border: 1px solid var(--border-strong);
+  border-bottom-width: 2px; border-radius: 4px;
+  padding: 1px 6px; min-width: 18px; text-align: center;
+}
 .hint { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
 .pill {
   background: var(--bg-input);

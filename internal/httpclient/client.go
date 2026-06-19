@@ -97,8 +97,17 @@ func (c *Client) transportFor(req Request) http.RoundTripper {
 		return c.secureTransp
 	}
 
-	t := &http.Transport{
-		Proxy: http.ProxyURL(u),
+	t := &http.Transport{}
+	// SOCKS5 needs a custom DialContext from x/net/proxy; HTTP/HTTPS goes
+	// through the stdlib's standard Proxy URL hook.
+	if u.Scheme == "socks5" || u.Scheme == "socks5h" {
+		auth, _ := socks5Auth(u)
+		dialer, derr := socks5Dialer(u.Host, auth)
+		if derr == nil {
+			t.DialContext = dialer
+		}
+	} else {
+		t.Proxy = http.ProxyURL(u)
 	}
 	if req.InsecureSkipVerify {
 		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec — opt-in
@@ -227,6 +236,37 @@ func (c *Client) Execute(ctx context.Context, req Request) (*Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
+
+	// Digest auth: a 401 with a `WWW-Authenticate: Digest …` challenge
+	// triggers exactly one re-send carrying the computed Authorization header.
+	// Two responses turn into one logical response from the UI's POV.
+	if resp.StatusCode == http.StatusUnauthorized && req.Auth != nil && req.Auth.Type == "digest" {
+		challenge := resp.Header.Get("WWW-Authenticate")
+		_ = resp.Body.Close()
+		if strings.HasPrefix(strings.ToLower(challenge), "digest ") {
+			authHeader, ok := buildDigestHeader(challenge, req.Auth, method, url, vars)
+			if ok {
+				retry, _ := http.NewRequestWithContext(ctx, method, url, body)
+				if retry != nil {
+					for _, h := range req.Headers {
+						if !h.Enabled || h.Key == "" {
+							continue
+						}
+						retry.Header.Add(interpolate(h.Key, vars), interpolate(h.Value, vars))
+					}
+					if contentType != "" && retry.Header.Get("Content-Type") == "" {
+						retry.Header.Set("Content-Type", contentType)
+					}
+					retry.Header.Set("Authorization", authHeader)
+					resp, err = hc.Do(retry)
+					if err != nil {
+						return nil, fmt.Errorf("digest retry: %w", err)
+					}
+				}
+			}
+		}
+	}
+
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
@@ -265,6 +305,15 @@ func applyAuth(req *http.Request, a *Auth, vars map[string]string) {
 		if k := interpolate(a.Key, vars); k != "" {
 			req.Header.Set(k, interpolate(a.Value, vars))
 		}
+	case "jwt":
+		// Frontend signs the JWT and writes the resulting token onto a.Token;
+		// at the wire we still just emit it as a Bearer.
+		if t := interpolate(a.Token, vars); t != "" {
+			req.Header.Set("Authorization", "Bearer "+t)
+		}
+	case "digest":
+		// Digest is challenge-response — populated in a second pass after the
+		// 401 in Execute(). Nothing to add on the initial request.
 	}
 }
 

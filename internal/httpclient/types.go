@@ -12,12 +12,19 @@ type Header struct {
 // Auth describes how to authenticate a request. The resolved credential is
 // applied as a header (query placement comes later). Fields support {{vars}}.
 type Auth struct {
-	Type     string `json:"type"`     // "none" | "bearer" | "basic" | "apikey"
-	Token    string `json:"token"`    // bearer
-	Username string `json:"username"` // basic
-	Password string `json:"password"` // basic
+	Type     string `json:"type"`     // "none" | "bearer" | "basic" | "apikey" | "jwt" | "digest"
+	Token    string `json:"token"`    // bearer (and pre-baked JWT once we mint it client-side)
+	Username string `json:"username"` // basic / digest
+	Password string `json:"password"` // basic / digest
 	Key      string `json:"key"`      // apikey: header name
 	Value    string `json:"value"`    // apikey: header value
+
+	// JWT-specific. The frontend builds the actual token and assigns it to
+	// `Token`; these are kept on the struct so a re-send can refresh the
+	// token if the caller wants to (e.g. when `iat`/`exp` drift).
+	JWTAlgo   string `json:"jwtAlgo,omitempty"`   // "HS256" | "HS384" | "HS512"
+	JWTSecret string `json:"jwtSecret,omitempty"`
+	JWTClaims string `json:"jwtClaims,omitempty"` // JSON payload
 }
 
 // FormField is one row of a urlencoded or multipart form body. For Type=="file"

@@ -65,15 +65,18 @@ async function onInstall() {
       </button>
       <div v-if="showWs" class="ws-menu" @click.stop>
         <div class="ws-head">Workspaces</div>
-        <button
+        <div
           v-for="w in workspaces" :key="w.id"
           class="ws-item" :class="{ active: w.id === activeWs }"
+          role="button" tabindex="0"
           @click="pickWs(w.id)"
+          @keydown.enter="pickWs(w.id)"
+          @keydown.space.prevent="pickWs(w.id)"
         >
           <span class="ws-name">{{ w.name }}</span>
           <button class="ws-act" title="Rename" @click.stop="renameWs(w.id, w.name)">✎</button>
           <button v-if="workspaces.length > 1" class="ws-act danger" title="Delete" @click.stop="delWs(w.id)">✕</button>
-        </button>
+        </div>
         <button class="ws-new" @click="newWs">+ New workspace</button>
       </div>
     </div>

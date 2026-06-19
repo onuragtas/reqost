@@ -189,20 +189,20 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Distraction-free / Zen mode** — sadece URL bar + body.
 
 ### G2 · Request body & advanced fields
-- [ ] **Raw body sub-type dropdown** — Postman pattern: Text / JSON / JavaScript / HTML / XML (Content-Type auto-set).
+- [x] **Raw body sub-type dropdown** — JSON/XML/HTML/JavaScript/Text + auto Content-Type.
 - [ ] **multipart/form-data per-part Content-Type** — JSON part vs text part (file upload + JSON gövde yaygın).
-- [ ] **Binary body type** — `application/octet-stream`, drag-drop dosya.
+- [x] **Binary body type** — `application/octet-stream`, file path (Go side `os.Open` streamed).
 - [ ] **MessagePack body** (modern ML API'leri).
 - [ ] **"Sign body" hook** — body hash'i header'a otomatik (HMAC için).
-- [ ] **Path variables editor** (`/users/:id` veya `/users/{id}` algıla → ayrı subtabe).
+- [x] **Path variables editor** — `:id` / `{id}` algılanır, Params alt-sekmesinde ayrı bölüm.
 - [ ] **Form file content-type override** per-field.
 - [ ] **Body gzip / deflate / br compress before send** opsiyonu.
 
 ### G3 · Auth genişletme
 - [ ] **AWS Signature v4** — access key/secret, region, service.
-- [ ] **Digest Auth** — RFC 7616 (`Authorization: Digest …` challenge-response).
+- [x] **Digest Auth** — MD5 + SHA-256, qop=auth, transparent 401 retry.
 - [ ] **OAuth 1.0a** (legacy ama Twitter v1.1, Trello vs hala kullanır).
-- [ ] **JWT Bearer** — claim editor + algoritma + secret/key → otomatik signed token header.
+- [x] **JWT Bearer** — HS256/384/512 WebCrypto, claim editor, auto-stamp `iat`.
 - [ ] **Hawk** (legacy).
 - [ ] **NTLM / Kerberos** (kurumsal).
 - [ ] **Akamai EdgeGrid**.
@@ -211,9 +211,9 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **OAuth 2.0 token cache UI** — geçerli token'ı göster, expire'a kalan süre, manuel sil/refresh.
 
 ### G4 · Pre-request / Test scripts
-- [ ] **"Test" düğmesi (gerçek request olmadan run)** — script debug için.
-- [ ] **Console.log → in-app panel** (şu an goja stdout'una düşüyor görünmüyor).
-- [ ] **Test snippet dropdown** — Postman'in "Status code: 200", "Response time < 200ms" şablonları, tek tıkla insert.
+- [x] **"Try" düğmesi (gerçek request olmadan run)** — ExecService.TryPreScript/TryTestScript.
+- [x] **Console.log → Test Results console paneli** — Try sonrası logs UI'da görünür.
+- [x] **Test snippet dropdown** — 11 hazır snippet (status, jsonBody, response time, save token, basic auth, etc).
 - [ ] **Visual test results bar/chart** — pass/fail oran, response-time histogram.
 - [ ] **Workflow scripts** — folder-level OR collection-level pre/post (zaten tree.context_json var, scripts kısmı eklenmesi gerek).
 - [ ] **pm.cookies bridge** — gerçek cookie jar'a okuma/yazma (şu an stub).
@@ -227,19 +227,19 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Variable inspector** — `{{token}}` hover'da hangi scope'tan resolve oluyor.
 - [ ] **"Find usage"** — bir variable'ın hangi request'lerde kullanıldığını listele.
 - [ ] **Quick switcher (Cmd+Shift+E)** — env hızlı değiştirme.
-- [ ] **Per-request variable override** (tab içinde sadece o request için patch).
+- [x] **Per-tab variable override** — Settings subtab'inde key/value editor; activeVars üstüne shadow.
 - [ ] **Variable history** — son N değer (debug için).
 - [ ] **Environment template sharing** — JSON export'ta gizli alanları opsiyonel maskele.
 
 ### G6 · Sidebar / collection ergonomics
 - [ ] **Multi-select** (Shift-click + checkbox) → toplu sil / taşı / export.
 - [ ] **Tag / label** per item (color chip) + sidebar filter.
-- [ ] **Star / favorite** — top "Favorites" pseudo-folder.
+- [x] **Star / favorite** — localStorage'da Set; filter-bar'da ★ toggle + tree row badge.
 - [ ] **Folder color** (görsel ayırt etmek için).
 - [ ] **Custom icon per folder** (emoji veya SVG dropdown).
-- [ ] **Filter by method** (sadece GET'leri göster vs).
+- [x] **Filter by method** — sidebar üstünde renkli method chip'leri.
 - [ ] **Recently used pseudo-folder** (top 10).
-- [ ] **"Copy ID" / "Copy reference path"** — `{{Login.response.body.token}}` yazımına yardım.
+- [x] **"Copy ID" / "Copy reference path"** — sağ-tık menüsünde ikisi de var.
 - [ ] **"Move to workspace…"** — sağ-tık → target workspace.
 - [ ] **Bulk rename** (regex find/replace).
 - [ ] **Sort options** — alphabetical, last-used, manual order.
@@ -247,15 +247,15 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 ### G7 · Tabs
 - [ ] **Tab drag-reorder**.
 - [ ] **Tab pin** (dirty check by-pass) + pinned grup üstte.
-- [ ] **Right-click → Close Others / To the Right / All**.
-- [ ] **Full URL + method tooltip** uzun adlarda.
+- [x] **Right-click → Close Others / To the Right / All**.
+- [x] **Full URL + method tooltip** uzun adlarda.
 - [ ] **Tab restore on launch** (last session tabs).
 - [ ] **Drag URL → tab bar** = openAdhoc.
-- [ ] **Cmd+1..9 tab switch shortcut**.
+- [x] **Cmd+1..9 tab switch shortcut**.
 
 ### G8 · Response panel
-- [ ] **Copy response body** button (one-click clipboard).
-- [ ] **Save response to file** (binary için kritik).
+- [x] **Copy response body** button (one-click clipboard).
+- [x] **Save response to file** (binary için kritik).
 - [ ] **Response visualizer** — Postman'in `pm.visualizer.set(template, data)` ile custom HTML render.
 - [ ] **Image preview** (`image/*` content-type).
 - [ ] **HTML preview** (sandbox iframe, JS off).
@@ -266,12 +266,12 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **50 MiB truncation banner** — sessiz değil görünür.
 - [ ] **Response time sparkline** son N send.
 - [ ] **Response size warning** (5 MB üstünde "büyük response" badge).
-- [ ] **Status code description** ("404 Not Found — RFC 7231").
+- [x] **Status code description** — full HTTP phrase table + class hint tooltip.
 - [ ] **Decode base64 / URL-encoded body** quick action.
 
 ### G9 · Send actions
-- [ ] **Send & Save** (Cmd+Shift+Enter).
-- [ ] **Send & Download** (response → file).
+- [x] **Send & Save** (Cmd+Shift+Enter).
+- [x] **Send & Download** (response → file).
 - [ ] **Send N times** (stress test mini-mode).
 - [ ] **Send All in folder (parallel)** — şu an seq runner var.
 - [ ] **Send button dropdown** — Send / Send & Save / Send Copy.
@@ -280,7 +280,7 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Schedule send** (cron veya delay).
 
 ### G10 · Cookies tab
-- [ ] **Manual add / edit / delete cookie**.
+- [x] **Manual add / edit / delete cookie**.
 - [ ] **Domain-aware cookie list** (sadece bu URL'in göndereceği değil tüm jar).
 - [ ] **Cookie import** Netscape format (cURL `-b cookies.txt`).
 - [ ] **Cookie export** clipboard / file.
@@ -338,7 +338,7 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Conflict UI** (3-way merge collection.json üzerinde).
 
 ### G17 · Network detay
-- [ ] **SOCKS5 proxy**.
+- [x] **SOCKS5 proxy** — `socks5://[user:pass@]host:port` via `x/net/proxy`.
 - [ ] **Custom CA trust store** path veya inline PEM.
 - [ ] **Network throttling** (slow 3G / fast 3G simulation).
 - [ ] **DNS over HTTPS** opsiyonu.
@@ -356,9 +356,9 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **gRPC stream replay** (önceki streaming response'u kaydedip mock'ta kullan).
 
 ### G19 · UI / theme / a11y
-- [ ] **System theme follow** (default).
-- [ ] **Font size + family setting**.
-- [ ] **Keyboard shortcuts cheat sheet** (Settings modal).
+- [x] **System theme follow** — `light` / `dark` / `system` segmented; `prefers-color-scheme` listener.
+- [x] **Font size setting** — Settings slider 10–20 px (CSS var `--app-font-size`).
+- [x] **Keyboard shortcuts cheat sheet** — Settings → modal + Cmd+/ jumps to Settings.
 - [ ] **Full keyboard navigation** (focus ring, no mouse).
 - [ ] **High contrast theme**.
 - [ ] **Reduced motion** (animation kapat).

@@ -54,6 +54,19 @@ func buildBody(req Request, method string, vars map[string]string) (io.Reader, s
 	case "formdata":
 		return buildMultipart(req.FormFields, vars)
 
+	case "binary":
+		// `body` holds an absolute path; stream it as octet-stream. We don't
+		// load the whole file into memory.
+		path := interpolate(req.Body, vars)
+		if path == "" {
+			return nil, "", nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, "", fmt.Errorf("binary body: open %s: %w", path, err)
+		}
+		return f, "application/octet-stream", nil
+
 	default:
 		return nil, "", fmt.Errorf("unsupported bodyType %q", req.BodyType)
 	}

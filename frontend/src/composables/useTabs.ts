@@ -5,7 +5,7 @@ import { parseQuery } from './url'
 
 export interface HeaderRow { key: string; value: string; enabled: boolean }
 export interface FormRow { key: string; value: string; type: 'text' | 'file'; enabled: boolean }
-export type BodyType = 'none' | 'raw' | 'json' | 'urlencoded' | 'formdata' | 'graphql'
+export type BodyType = 'none' | 'raw' | 'json' | 'urlencoded' | 'formdata' | 'graphql' | 'binary' | 'xml' | 'html' | 'javascript' | 'text'
 
 // Per-request execution settings. undefined means "inherit the app default".
 export interface RequestSettings {
@@ -43,7 +43,7 @@ export interface SavedExample {
 
 export interface TestRow { name: string; passed: boolean; error: string }
 
-export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2'
+export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey' | 'oauth2' | 'jwt' | 'digest'
 
 export type OAuthGrant = 'client_credentials' | 'password' | 'authorization_code'
 
@@ -73,6 +73,11 @@ export interface Auth {
   // token is mirrored into `token` so the transport layer treats it like a
   // Bearer for actual sending.
   oauth2?: OAuth2Config
+  // JWT bearer fields. The signed token is written back onto `token` so the
+  // backend just sees it as a Bearer.
+  jwtAlgo?: 'HS256' | 'HS384' | 'HS512'
+  jwtSecret?: string
+  jwtClaims?: string
 }
 
 function blankAuth(): Auth {
@@ -100,6 +105,10 @@ export interface ReqTab {
   description: string
   settings: RequestSettings
   examples: SavedExample[]
+  // Per-tab variable overrides — wins over the active environment for the
+  // duration of the tab. Tab-only state (not persisted via SaveRequest), so
+  // it acts as a local scratchpad.
+  tabVars: Record<string, string>
   clean: string // snapshot() at last load/save; '' means not yet baselined
   reqSubTab: ReqSubTab
   resSubTab: ResSubTab
@@ -131,7 +140,7 @@ function blankTab(id: string, name: string, method: string): ReqTab {
   return {
     id, name, method: method || 'GET',
     url: '', params: [], headers: [], body: '', bodyType: 'none', formFields: [], graphqlVars: '', grpcMethod: '', auth: blankAuth(),
-    preScript: '', postScript: '', description: '', settings: {}, examples: [], clean: '',
+    preScript: '', postScript: '', description: '', settings: {}, examples: [], tabVars: {}, clean: '',
     reqSubTab: 'headers', resSubTab: 'body',
     loading: true, sending: false, sendError: '', response: null,
     tests: [], logs: [],

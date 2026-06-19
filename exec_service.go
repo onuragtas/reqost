@@ -154,6 +154,37 @@ func (s *ExecService) ClearCookies() {
 	s.client.ClearCookies()
 }
 
+// SetCookie adds or overwrites a cookie for the URL.
+func (s *ExecService) SetCookie(url, name, value string) error {
+	return s.client.SetCookie(url, name, value)
+}
+
+// DeleteCookie removes a cookie by name within the URL's scope.
+func (s *ExecService) DeleteCookie(url, name string) error {
+	return s.client.DeleteCookie(url, name)
+}
+
+// TryPreScript runs a pre-request script in isolation (no HTTP send) so the
+// user can iterate on the script editor without burning real requests. Vars
+// are echoed back as the script's mutation result; logs surface in the UI's
+// test results panel.
+func (s *ExecService) TryPreScript(src string, vars map[string]string) script.Result {
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	return script.RunPre(src, vars, script.ScriptRequest{}, nil, script.Info{})
+}
+
+// TryTestScript runs a test script against a frontend-provided response
+// snapshot (typically the tab's last `response`). Returns the assertions +
+// any console output. No HTTP fired.
+func (s *ExecService) TryTestScript(src string, vars map[string]string, resp script.ScriptResponse) script.Result {
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	return script.RunTests(src, vars, resp, nil, script.Info{})
+}
+
 // Cancel aborts an in-flight request started with the given reqId.
 func (s *ExecService) Cancel(reqId string) {
 	s.mu.Lock()
