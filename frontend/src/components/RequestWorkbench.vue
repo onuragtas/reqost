@@ -374,6 +374,76 @@ function fmtSize(n: number) {
 }
 function fmtMs(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms` }
 
+// ── Request / Response split ───────────────────────────────────────────────
+// Persisted between sessions so the user gets the layout they trained on.
+type SplitMode = 'split' | 'req-only' | 'res-only'
+const SPLIT_KEY  = 'reqost:split:v1'
+const SPLIT_MODE = 'reqost:split:mode:v1'
+const splitRatio = ref<number>(Number(localStorage.getItem(SPLIT_KEY)) || 0.42)
+const splitMode  = ref<SplitMode>((localStorage.getItem(SPLIT_MODE) as SplitMode) || 'split')
+const splitDragging = ref(false)
+
+watch(splitRatio, v => localStorage.setItem(SPLIT_KEY, String(v)))
+watch(splitMode,  v => localStorage.setItem(SPLIT_MODE, v))
+
+// The split-bar takes a fixed 26px in the same flex column, so we discount it
+// from the percent bases. Without this, picking "Only request" pushes the bar
+// (and the toggle that gets you back) off-screen.
+const SPLIT_BAR_PX = 26
+const splitStyle = computed(() => {
+  if (splitMode.value === 'req-only') return { '--req-h': `calc(100% - ${SPLIT_BAR_PX}px)`, '--res-h': '0%' } as any
+  if (splitMode.value === 'res-only') return { '--req-h': '0%',  '--res-h': `calc(100% - ${SPLIT_BAR_PX}px)` } as any
+  const pct = Math.max(8, Math.min(92, splitRatio.value * 100))
+  // Each pane gives up half of the bar's height — the visible totals add to
+  // exactly 100% so the bar is never clipped.
+  return {
+    '--req-h': `calc(${pct}% - ${SPLIT_BAR_PX / 2}px)`,
+    '--res-h': `calc(${100 - pct}% - ${SPLIT_BAR_PX / 2}px)`,
+  } as any
+})
+
+function setSplit(m: SplitMode) { splitMode.value = m }
+function resetSplit() { splitMode.value = 'split'; splitRatio.value = 0.5 }
+
+// Cmd+\ (or Ctrl+\) cycles through layouts:
+//   split → only request → only response → split
+// Provides a keyboard escape hatch if the user collapses one pane and the
+// segmented toggle ever ends up off-screen.
+function onSplitShortcut(e: KeyboardEvent) {
+  if (!(e.metaKey || e.ctrlKey) || e.key !== '\\') return
+  e.preventDefault()
+  splitMode.value = splitMode.value === 'split' ? 'req-only'
+                 : splitMode.value === 'req-only' ? 'res-only'
+                 : 'split'
+}
+onMounted(() => window.addEventListener('keydown', onSplitShortcut))
+onUnmounted(() => window.removeEventListener('keydown', onSplitShortcut))
+
+let dragRect: DOMRect | null = null
+function onSplitDragStart(e: PointerEvent) {
+  if (e.button !== 0) return
+  // Resolve against the .split container so the math is correct when the
+  // window is resized.
+  const split = (e.currentTarget as HTMLElement).parentElement
+  if (!split) return
+  dragRect = split.getBoundingClientRect()
+  splitDragging.value = true
+  splitMode.value = 'split'
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  window.addEventListener('pointermove', onSplitDragMove)
+  window.addEventListener('pointerup', onSplitDragEnd, { once: true })
+}
+function onSplitDragMove(e: PointerEvent) {
+  if (!dragRect) return
+  const raw = (e.clientY - dragRect.top) / dragRect.height
+  splitRatio.value = Math.max(0.08, Math.min(0.92, raw))
+}
+function onSplitDragEnd() {
+  splitDragging.value = false
+  dragRect = null
+  window.removeEventListener('pointermove', onSplitDragMove)
+}
+
 // ── OAuth 2.0 ─────────────────────────────────────────────────────────────
 const oauthGetting = ref(false)
 const oauthError = ref<string>('')
@@ -635,7 +705,7 @@ function onSetVerifySSL(s: string) {
         <pre class="code-body selectable">{{ generatedCode }}</pre>
       </div>
 
-      <div class="split">
+      <div class="split" :class="`split-${splitMode}`" :style="splitStyle">
         <!-- request -->
         <section class="req">
           <div class="subtabs">
@@ -898,6 +968,57 @@ function onSetVerifySSL(s: string) {
           </div>
         </section>
 
+        <!-- drag handle / collapse bar -->
+        <div
+          class="split-bar"
+          :class="{ dragging: splitDragging }"
+          role="separator"
+          aria-label="Drag to resize request / response"
+          @pointerdown="onSplitDragStart"
+          @dblclick="resetSplit"
+        >
+          <div class="split-grip"></div>
+          <div class="split-actions" @pointerdown.stop @dblclick.stop>
+            <button
+              class="split-btn" :class="{ active: splitMode === 'req-only' }"
+              title="Show only Request (hide Response)"
+              @click.stop="setSplit('req-only')"
+            >
+              <svg viewBox="0 0 16 12" aria-hidden="true">
+                <rect class="bg" x="0.5" y="0.5" width="15" height="11" rx="2"/>
+                <rect class="fill" x="2" y="2" width="12" height="4.5" rx="1"/>
+                <line class="div" x1="0.5" y1="7" x2="15.5" y2="7"/>
+              </svg>
+              <span>Request</span>
+            </button>
+            <button
+              class="split-btn" :class="{ active: splitMode === 'split' }"
+              title="Split 50 / 50 (double-click drag bar)"
+              @click.stop="resetSplit"
+            >
+              <svg viewBox="0 0 16 12" aria-hidden="true">
+                <rect class="bg" x="0.5" y="0.5" width="15" height="11" rx="2"/>
+                <rect class="fill" x="2" y="2" width="12" height="3.5" rx="1"/>
+                <rect class="fill" x="2" y="6.5" width="12" height="3.5" rx="1"/>
+                <line class="div" x1="0.5" y1="6" x2="15.5" y2="6"/>
+              </svg>
+              <span>Split</span>
+            </button>
+            <button
+              class="split-btn" :class="{ active: splitMode === 'res-only' }"
+              title="Show only Response (hide Request)"
+              @click.stop="setSplit('res-only')"
+            >
+              <svg viewBox="0 0 16 12" aria-hidden="true">
+                <rect class="bg" x="0.5" y="0.5" width="15" height="11" rx="2"/>
+                <line class="div" x1="0.5" y1="5" x2="15.5" y2="5"/>
+                <rect class="fill" x="2" y="5.5" width="12" height="4.5" rx="1"/>
+              </svg>
+              <span>Response</span>
+            </button>
+          </div>
+        </div>
+
         <!-- response -->
         <section class="res">
           <div v-if="active.sendError" class="res-msg err selectable">{{ active.sendError }}</div>
@@ -1097,9 +1218,71 @@ function onSetVerifySSL(s: string) {
 .hist-dur { color: var(--text-faint); margin-left: auto; }
 .hist-body { flex: 1; overflow: auto; margin: 0; padding: 10px 14px; font: 12px/1.6 monospace; color: var(--text); }
 
-.split { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.req { display: flex; flex-direction: column; flex-shrink: 0; max-height: 44%; }
-.res { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--border); }
+.split { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.req {
+  display: flex; flex-direction: column;
+  flex: 0 0 var(--req-h, 42%);
+  min-height: 0; overflow: hidden;
+  transition: flex-basis 0.18s ease;
+}
+.res {
+  display: flex; flex-direction: column;
+  flex: 0 0 var(--res-h, 58%);
+  min-height: 0; overflow: hidden;
+  border-top: 1px solid var(--border);
+  transition: flex-basis 0.18s ease;
+}
+.split.split-req-only .res,
+.split.split-res-only .req { border: 0; }
+.split.dragging .req,
+.split.dragging .res { transition: none; }
+
+.split-bar {
+  position: relative;
+  height: 26px; flex-shrink: 0;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  cursor: row-resize;
+  display: flex; align-items: center; justify-content: center;
+  user-select: none;
+}
+.split-bar:hover, .split-bar.dragging { background: var(--bg-hover); }
+.split-grip {
+  width: 40px; height: 3px; border-radius: 2px;
+  background: var(--border-strong);
+}
+.split-bar:hover .split-grip,
+.split-bar.dragging .split-grip { background: var(--accent); }
+
+.split-actions {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  display: flex; gap: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px;
+  cursor: default;
+}
+.split-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 3px; cursor: pointer;
+  background: transparent; border: 0;
+  color: var(--text-dim); font-size: 11px; font-weight: 500;
+  line-height: 1;
+}
+.split-btn svg { width: 18px; height: 14px; display: block; flex-shrink: 0; }
+.split-btn svg .bg   { fill: var(--bg-input); stroke: var(--border-strong); stroke-width: 1; }
+.split-btn svg .fill { fill: var(--text-faint); }
+.split-btn svg .div  { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 2 2; }
+
+.split-btn:hover { color: var(--text); background: var(--bg-hover); }
+.split-btn:hover svg .fill { fill: var(--text-dim); }
+
+.split-btn.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.split-btn.active svg .bg   { stroke: var(--accent); }
+.split-btn.active svg .fill { fill: var(--accent); }
+.split-btn.active svg .div  { stroke: var(--accent); }
 
 .subtabs, .res-subtabs { display: flex; gap: 2px; }
 .save-ex {

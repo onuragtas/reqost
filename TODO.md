@@ -175,3 +175,233 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [ ] **Universal macOS binary** (arm64+amd64 lipo).
 - [ ] **AppImage (Linux), .pkg (macOS), MSI (Windows)** native installer'lar.
 - [ ] **macOS notarize, Windows code sign**.
+
+## G — Postman + Insomnia detaylı parite (sıralı yapılacak)
+
+Çekirdek + UX gap'lerinden sonra **bu listedekiler** ürünü "günlük kullanılan herhangi bir Postman/Insomnia ekranıyla aynı" hissettirir. Numaralandırma uygulama sırasıdır — bağımlılıklar takip edilebilsin.
+
+### G1 · Workbench layout (çoğu Pri-1)
+- [x] **Request/response drag-resize + collapse** — split bar, 50/50/req-only/res-only toggle, localStorage persist (bu seansta yapıldı).
+- [ ] **Horizontal split toggle** — top-bottom yerine yan yana (yaygın ultra-wide kullanıcısı tercihi).
+- [ ] **Sidebar collapse to icon-only** — workbench için daha geniş alan.
+- [ ] **"Open response in new window"** — ayrı Wails window, çok protokol takibi için.
+- [ ] **"Pop request out"** — request'i ayrı pencerede açma.
+- [ ] **Distraction-free / Zen mode** — sadece URL bar + body.
+
+### G2 · Request body & advanced fields
+- [ ] **Raw body sub-type dropdown** — Postman pattern: Text / JSON / JavaScript / HTML / XML (Content-Type auto-set).
+- [ ] **multipart/form-data per-part Content-Type** — JSON part vs text part (file upload + JSON gövde yaygın).
+- [ ] **Binary body type** — `application/octet-stream`, drag-drop dosya.
+- [ ] **MessagePack body** (modern ML API'leri).
+- [ ] **"Sign body" hook** — body hash'i header'a otomatik (HMAC için).
+- [ ] **Path variables editor** (`/users/:id` veya `/users/{id}` algıla → ayrı subtabe).
+- [ ] **Form file content-type override** per-field.
+- [ ] **Body gzip / deflate / br compress before send** opsiyonu.
+
+### G3 · Auth genişletme
+- [ ] **AWS Signature v4** — access key/secret, region, service.
+- [ ] **Digest Auth** — RFC 7616 (`Authorization: Digest …` challenge-response).
+- [ ] **OAuth 1.0a** (legacy ama Twitter v1.1, Trello vs hala kullanır).
+- [ ] **JWT Bearer** — claim editor + algoritma + secret/key → otomatik signed token header.
+- [ ] **Hawk** (legacy).
+- [ ] **NTLM / Kerberos** (kurumsal).
+- [ ] **Akamai EdgeGrid**.
+- [ ] **Bearer "Add to" toggle** — Header vs Query Param vs Cookie (Postman pattern).
+- [ ] **API Key "Add to" Header / Query Param**.
+- [ ] **OAuth 2.0 token cache UI** — geçerli token'ı göster, expire'a kalan süre, manuel sil/refresh.
+
+### G4 · Pre-request / Test scripts
+- [ ] **"Test" düğmesi (gerçek request olmadan run)** — script debug için.
+- [ ] **Console.log → in-app panel** (şu an goja stdout'una düşüyor görünmüyor).
+- [ ] **Test snippet dropdown** — Postman'in "Status code: 200", "Response time < 200ms" şablonları, tek tıkla insert.
+- [ ] **Visual test results bar/chart** — pass/fail oran, response-time histogram.
+- [ ] **Workflow scripts** — folder-level OR collection-level pre/post (zaten tree.context_json var, scripts kısmı eklenmesi gerek).
+- [ ] **pm.cookies bridge** — gerçek cookie jar'a okuma/yazma (şu an stub).
+- [ ] **pm.iterationData** — runner data file ile beraber.
+- [ ] **Sandbox `require()`** sınırlı modüller (`crypto`, `uuid`, `lodash` whitelist).
+- [ ] **chai extra** — `.deep`, `.respondTo`, `.throw`.
+
+### G5 · Variables / Environments
+- [ ] **Initial value vs Current value** (Postman pattern: initial committed, current local-only — vault ile uyumlu).
+- [ ] **5 scope katmanı**: Global, Collection, Folder, Request, Environment — explicit precedence dropdown'u.
+- [ ] **Variable inspector** — `{{token}}` hover'da hangi scope'tan resolve oluyor.
+- [ ] **"Find usage"** — bir variable'ın hangi request'lerde kullanıldığını listele.
+- [ ] **Quick switcher (Cmd+Shift+E)** — env hızlı değiştirme.
+- [ ] **Per-request variable override** (tab içinde sadece o request için patch).
+- [ ] **Variable history** — son N değer (debug için).
+- [ ] **Environment template sharing** — JSON export'ta gizli alanları opsiyonel maskele.
+
+### G6 · Sidebar / collection ergonomics
+- [ ] **Multi-select** (Shift-click + checkbox) → toplu sil / taşı / export.
+- [ ] **Tag / label** per item (color chip) + sidebar filter.
+- [ ] **Star / favorite** — top "Favorites" pseudo-folder.
+- [ ] **Folder color** (görsel ayırt etmek için).
+- [ ] **Custom icon per folder** (emoji veya SVG dropdown).
+- [ ] **Filter by method** (sadece GET'leri göster vs).
+- [ ] **Recently used pseudo-folder** (top 10).
+- [ ] **"Copy ID" / "Copy reference path"** — `{{Login.response.body.token}}` yazımına yardım.
+- [ ] **"Move to workspace…"** — sağ-tık → target workspace.
+- [ ] **Bulk rename** (regex find/replace).
+- [ ] **Sort options** — alphabetical, last-used, manual order.
+
+### G7 · Tabs
+- [ ] **Tab drag-reorder**.
+- [ ] **Tab pin** (dirty check by-pass) + pinned grup üstte.
+- [ ] **Right-click → Close Others / To the Right / All**.
+- [ ] **Full URL + method tooltip** uzun adlarda.
+- [ ] **Tab restore on launch** (last session tabs).
+- [ ] **Drag URL → tab bar** = openAdhoc.
+- [ ] **Cmd+1..9 tab switch shortcut**.
+
+### G8 · Response panel
+- [ ] **Copy response body** button (one-click clipboard).
+- [ ] **Save response to file** (binary için kritik).
+- [ ] **Response visualizer** — Postman'in `pm.visualizer.set(template, data)` ile custom HTML render.
+- [ ] **Image preview** (`image/*` content-type).
+- [ ] **HTML preview** (sandbox iframe, JS off).
+- [ ] **PDF preview** (Wails native veya base64 → object tag).
+- [ ] **Diff with previous response** (response history'den seç → side-by-side).
+- [ ] **JSON path picker** (tree node tıkla → `$.path` clipboard).
+- [ ] **Search in response headers** (içinde Cmd+F).
+- [ ] **50 MiB truncation banner** — sessiz değil görünür.
+- [ ] **Response time sparkline** son N send.
+- [ ] **Response size warning** (5 MB üstünde "büyük response" badge).
+- [ ] **Status code description** ("404 Not Found — RFC 7231").
+- [ ] **Decode base64 / URL-encoded body** quick action.
+
+### G9 · Send actions
+- [ ] **Send & Save** (Cmd+Shift+Enter).
+- [ ] **Send & Download** (response → file).
+- [ ] **Send N times** (stress test mini-mode).
+- [ ] **Send All in folder (parallel)** — şu an seq runner var.
+- [ ] **Send button dropdown** — Send / Send & Save / Send Copy.
+- [ ] **Retry button** (failed response sonrası tek-tık tekrar).
+- [ ] **"Send to background"** (uzun response'lar için).
+- [ ] **Schedule send** (cron veya delay).
+
+### G10 · Cookies tab
+- [ ] **Manual add / edit / delete cookie**.
+- [ ] **Domain-aware cookie list** (sadece bu URL'in göndereceği değil tüm jar).
+- [ ] **Cookie import** Netscape format (cURL `-b cookies.txt`).
+- [ ] **Cookie export** clipboard / file.
+
+### G11 · Runner (Newman parite)
+- [ ] **Iterations (`-n 5`)** — `reqost run` ve UI runner.
+- [ ] **Data file (`-d data.csv` / `.json`)** — iteration başına bir row → variables.
+- [ ] **Delay between requests** (`--delay 500ms`).
+- [ ] **Bail on first failure** (`--bail`).
+- [ ] **Folder filter** (`--folder Auth`).
+- [ ] **Reporters: html, allure** (junit + json + text var).
+- [ ] **`--insecure` flag** (verify SSL off CLI'da).
+- [ ] **Runner progress UI** — şu an basit; per-iteration log + ortalama / p95 metrik.
+
+### G12 · Mock server iyileştirmeleri
+- [ ] **Request log panel** — gelen request'leri DesignPanel altında listele (canlı).
+- [ ] **CORS headers default-on** (Access-Control-Allow-Origin: *).
+- [ ] **Latency simulation** — `--delay 200ms` veya range.
+- [ ] **Conditional response routing** (header/path/query match → farklı example).
+- [ ] **Stateful mode** — last request memory (örn. POST sonrası GET dolar).
+- [ ] **Multiple examples per endpoint, picker UI**.
+- [ ] **Mock server save URL clipboard**.
+
+### G13 · API Design
+- [ ] **OpenAPI sözdizimi validation** — kaydetmeden lint.
+- [ ] **Schema preview panel** (left=editor, right=rendered docs).
+- [ ] **"Send request from spec"** — operation'a tıkla, sağdaki Workbench'te taze tab.
+- [ ] **Import to Collection from spec** (zaten internal/openapi var; UI'dan tek-tık).
+- [ ] **OpenAPI versioning** (v1, v2 dosyaları).
+- [ ] **AsyncAPI desteği** — WebSocket/SSE event spec.
+
+### G14 · Plugin sistemi iyileştirmeleri
+- [ ] **Manifest.json + permission model** — `network`, `fs`, `timer` izinleri.
+- [ ] **Plugin console** (her plugin için ayrı log panel).
+- [ ] **Plugin reload düğmesi** (disk değişikliği auto-detect değil).
+- [ ] **"Discover plugins" listesi** — GitHub topic `reqost-plugin` ile.
+- [ ] **Plugin context API** — `pm.environment`, `pm.cookies`, `pm.request`, `pm.response` plugin'lere expose.
+- [ ] **Custom auth provider** API — plugin yeni bir AuthType register edebilsin.
+- [ ] **Plugin per-workspace toggle**.
+
+### G15 · Workspaces / collaboration
+- [ ] **Workspace export/import** — `.zip` (collection.json + environments.json + plugins/ + design.yaml).
+- [ ] **Workspace activity log** — son N create/delete/move/save (kim, ne, ne zaman; tek kullanıcı için bile undo'ya temel).
+- [ ] **Workspace settings panel** — default request settings (timeout, redirect vs.) per workspace.
+- [ ] **Workspace switcher shortcut** (Cmd+Shift+W).
+- [ ] **Cloud sync hook** (opsiyonel, future: S3/Git backed).
+- [ ] **Workspace-level secrets store** (vault, OS keychain backed).
+
+### G16 · Git sync UI
+- [ ] **"Bind to Git directory…"** workspace dropdown'unda.
+- [ ] **Status badge** (uncommitted değişiklik var mı).
+- [ ] **Branches modal** — switch / new branch.
+- [ ] **Commit modal** — diff preview + message + amend.
+- [ ] **Pull / push UI** (göstergeli).
+- [ ] **Conflict UI** (3-way merge collection.json üzerinde).
+
+### G17 · Network detay
+- [ ] **SOCKS5 proxy**.
+- [ ] **Custom CA trust store** path veya inline PEM.
+- [ ] **Network throttling** (slow 3G / fast 3G simulation).
+- [ ] **DNS over HTTPS** opsiyonu.
+- [ ] **HTTP/2 + HTTP/3 toggle** (default auto).
+- [ ] **WebSocket subprotocols** (Sec-WebSocket-Protocol header).
+- [ ] **WebSocket binary frame** view (hex + decode dropdown).
+- [ ] **WebSocket ping/pong** otomatik + manuel.
+- [ ] **WebSocket auto-reconnect** + backoff.
+- [ ] **WebSocket subscribe replay** — connect'te kuyrukta bekleyen mesajları gönder.
+
+### G18 · gRPC iyileştirmeleri
+- [ ] **gRPC `.proto` import** (reflection olmayan sunucular için).
+- [ ] **gRPC metadata editor** (headers eşdeğeri).
+- [ ] **gRPC TLS + mTLS client cert** (zaten httpclient'ta var, gRPC'ye taşı).
+- [ ] **gRPC stream replay** (önceki streaming response'u kaydedip mock'ta kullan).
+
+### G19 · UI / theme / a11y
+- [ ] **System theme follow** (default).
+- [ ] **Font size + family setting**.
+- [ ] **Keyboard shortcuts cheat sheet** (Settings modal).
+- [ ] **Full keyboard navigation** (focus ring, no mouse).
+- [ ] **High contrast theme**.
+- [ ] **Reduced motion** (animation kapat).
+- [ ] **Localization** — TR + EN.
+- [ ] **Date/time format** — locale-aware (RFC, ISO, relative).
+- [ ] **Status bar** — alt-bar: workspace · env · proxy · plugin sayısı.
+
+### G20 · Reliability / quality of life
+- [ ] **Crash report opt-in** (telemetri yok varsayılan).
+- [ ] **Auto-save dirty tabs** (debounced).
+- [ ] **Unsaved changes warning on quit**.
+- [ ] **Disk corruption recovery** (SQLite WAL replay + DB integrity check).
+- [ ] **Offline mode banner** (network yok → auto-update / OAuth disable).
+- [ ] **Settings backup/restore**.
+
+### G21 · Documentation / sharing
+- [ ] **Auto-doc from collection** (Markdown + HTML).
+- [ ] **Public share link** (read-only static page export).
+- [ ] **Embed widget** (web sayfasına iframe).
+
+### G22 · Performance test mode (Postman v11 yok ama Insomnia + Hoppscotch peek)
+- [ ] **Iteration concurrency** (`-c 50` parallel sessions).
+- [ ] **Ramp-up profile** (1 → 100 user 30s).
+- [ ] **p50/p95/p99 metrik UI**.
+- [ ] **k6 script export**.
+
+### G23 · Integrations
+- [ ] **Slack notification** — collection runner sonucu webhook.
+- [ ] **Webhook test** (gelen tarafı dinleme, ngrok-style tunnel'a hook).
+- [ ] **Browser extension** — sayfada cURL kopyaladığında otomatik tab açma (uzak ihtimal).
+- [ ] **VSCode extension** stub.
+
+### G24 · Power user
+- [ ] **Command palette parametre prompt** (cmd → "Set env: ___").
+- [ ] **Macros / kayıtlı aksiyon sequence**.
+- [ ] **Workspace template** (boş workspace + default folder/scripts).
+- [ ] **Settings → JSON import/export** (ayar paylaşımı).
+
+### G25 · Niş ama büyük etki yaratan ufak şeyler
+- [ ] **Request "description" markdown render** subtabe.
+- [ ] **TODO/note comment per-line in scripts** (CodeMirror linter integration).
+- [ ] **Request copy → paste yapıldığında format korunur** (Postman v2.1 JSON clipboard).
+- [ ] **URL bar'da `?key=value&...` highlight + paste'te otomatik params'a parse**.
+- [ ] **Drag environment from sidebar onto URL bar** → o env'in `{{baseUrl}}` insert.
+- [ ] **"Use this response as input for next request"** (chaining wizard).
+- [ ] **Quick variable extract** — response body'de bir değeri seç → "Save as variable" pop-up.

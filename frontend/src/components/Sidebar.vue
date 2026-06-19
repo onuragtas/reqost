@@ -465,7 +465,17 @@ const METHOD_COLORS: Record<string, string> = {
       >
         <span class="icon">
           <template v-if="item.type === 'folder'">
-            {{ item.isExpanded ? '▾' : '▸' }}
+            <svg
+              class="chev"
+              :class="{ open: item.isExpanded }"
+              viewBox="0 0 10 10"
+              aria-hidden="true"
+            >
+              <path d="M3 2.5 L7 5 L3 7.5 Z" />
+            </svg>
+            <svg class="folder-ico" viewBox="0 0 16 14" aria-hidden="true">
+              <path d="M1.5 3.5 L1.5 11.5 A1 1 0 0 0 2.5 12.5 L13.5 12.5 A1 1 0 0 0 14.5 11.5 L14.5 5.5 A1 1 0 0 0 13.5 4.5 L7.5 4.5 L6 3 A1 1 0 0 0 5.3 2.7 L2.5 2.7 A1 1 0 0 0 1.5 3.5 Z"/>
+            </svg>
           </template>
           <span
             v-else
@@ -568,12 +578,39 @@ const METHOD_COLORS: Record<string, string> = {
 }
 
 .icon {
-  width: 38px;
+  width: 42px;
   flex-shrink: 0;
-  font-size: 10px;
-  text-align: right;
-  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--text-dim);
 }
+
+.chev {
+  width: 9px; height: 9px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+.chev path { fill: currentColor; }
+.chev.open { transform: rotate(90deg); color: var(--accent); }
+.row:hover .chev { color: var(--text); }
+.row:hover .chev.open { color: var(--accent); }
+
+.folder-ico {
+  width: 14px; height: 12px;
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.85;
+}
+.folder-ico path {
+  fill: color-mix(in srgb, currentColor 18%, transparent);
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.row:hover .folder-ico { opacity: 1; }
 
 .badge {
   font-family: monospace;
