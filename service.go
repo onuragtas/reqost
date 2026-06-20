@@ -234,9 +234,20 @@ func (s *CollectionService) GetRequestDetail(id string) (*index.RequestDetail, e
 	return s.db.GetRequestDetail(id)
 }
 
+// edited emits collection:edited so the frontend's "unsynced to git" badge
+// and any other observer can light up. We don't pass a payload because every
+// listener cares only that *something* changed, not what.
+func (s *CollectionService) edited(kind string) {
+	s.emit("collection:edited", kind)
+}
+
 // SaveRequest persists edits to an existing request into the index.
 func (s *CollectionService) SaveRequest(d index.RequestDetail) error {
-	return s.db.SaveRequest(d)
+	if err := s.db.SaveRequest(d); err != nil {
+		return err
+	}
+	s.edited("save")
+	return nil
 }
 
 // CreateRequest adds a new empty request under parentID (empty == root).
@@ -244,22 +255,38 @@ func (s *CollectionService) CreateRequest(parentID, name, method string) (index.
 	if method == "" {
 		method = "GET"
 	}
-	return s.db.CreateNode(parentID, name, "request", method)
+	n, err := s.db.CreateNode(parentID, name, "request", method)
+	if err == nil {
+		s.edited("create")
+	}
+	return n, err
 }
 
 // CreateFolder adds a new folder under parentID (empty == root).
 func (s *CollectionService) CreateFolder(parentID, name string) (index.TreeNode, error) {
-	return s.db.CreateNode(parentID, name, "folder", "")
+	n, err := s.db.CreateNode(parentID, name, "folder", "")
+	if err == nil {
+		s.edited("create")
+	}
+	return n, err
 }
 
 // RenameNode changes a node's display name.
 func (s *CollectionService) RenameNode(id, name string) error {
-	return s.db.RenameNode(id, name)
+	if err := s.db.RenameNode(id, name); err != nil {
+		return err
+	}
+	s.edited("rename")
+	return nil
 }
 
 // DeleteNode removes a node and all of its descendants.
 func (s *CollectionService) DeleteNode(id string) error {
-	return s.db.DeleteNode(id)
+	if err := s.db.DeleteNode(id); err != nil {
+		return err
+	}
+	s.edited("delete")
+	return nil
 }
 
 // GetFolderContext loads the folder's inheritance JSON blob (shared headers /
@@ -270,7 +297,11 @@ func (s *CollectionService) GetFolderContext(id string) (string, error) {
 
 // SetFolderContext persists the folder's inheritance JSON blob.
 func (s *CollectionService) SetFolderContext(id, contextJSON string) error {
-	return s.db.SetFolderContext(id, contextJSON)
+	if err := s.db.SetFolderContext(id, contextJSON); err != nil {
+		return err
+	}
+	s.edited("folderContext")
+	return nil
 }
 
 // AncestorContexts returns the folder-context JSON for each ancestor of id,
@@ -284,7 +315,11 @@ func (s *CollectionService) AncestorContexts(id string) ([]string, error) {
 // Used by the sidebar drag-and-drop. Moving into self or a descendant returns
 // an error.
 func (s *CollectionService) MoveNode(id, newParentID string, newIndex int) error {
-	return s.db.MoveNode(id, newParentID, newIndex)
+	if err := s.db.MoveNode(id, newParentID, newIndex); err != nil {
+		return err
+	}
+	s.edited("move")
+	return nil
 }
 
 // ClearAll removes every item from the collection index.

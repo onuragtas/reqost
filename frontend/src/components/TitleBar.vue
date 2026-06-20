@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { Events } from '@wailsio/runtime'
 import { useUpdate } from '../composables/useUpdate'
 import {
   ListWorkspaces, ActiveWorkspaceID, SwitchWorkspace, CreateWorkspace, RenameWorkspace, DeleteWorkspace,
@@ -7,6 +8,7 @@ import {
 import { Status as GitStatus } from '../../bindings/reqost/gitservice'
 import { useDialog } from '../composables/useDialog'
 import { useGitBind } from '../composables/useGitBind'
+import { useGitDirty } from '../composables/useGitDirty'
 import GitModal from './GitModal.vue'
 
 const { version, updateInfo, applying, applied, checkError, autoCheck, install } = useUpdate()
@@ -18,6 +20,7 @@ const workspaces = ref<any[]>([])
 const activeWs = ref<string>('')
 
 const { get: getGitBind, all: gitBinds } = useGitBind()
+const { setActive: setActiveDirty, isDirty: isWsDirty, clear: clearWsDirty } = useGitDirty()
 const showGit = ref(false)
 const gitTargetWsId = ref<string>('')
 const gitTargetWsName = ref<string>('')
@@ -30,12 +33,18 @@ const gitBadgeColor = ref<'clean' | 'dirty' | 'unbound'>('unbound')
 async function refreshGitBadge() {
   const path = activeWs.value ? getGitBind(activeWs.value) : ''
   if (!path) { gitBadgeText.value = ''; gitBadgeColor.value = 'unbound'; return }
+  const unsynced = isWsDirty(activeWs.value)
   try {
     const st: any = await GitStatus(path)
     if (!st?.hasRepo) { gitBadgeText.value = 'no repo'; gitBadgeColor.value = 'dirty'; return }
     const changes = (st.status ?? '').split('\n').filter((l: string) => l.trim()).length
-    gitBadgeText.value = `${st.branch || 'detached'}${changes ? ` · ${changes}` : ''}`
-    gitBadgeColor.value = changes ? 'dirty' : 'clean'
+    const parts: string[] = [st.branch || 'detached']
+    if (unsynced)  parts.push('★')                 // in-app edits not yet exported
+    if (changes)   parts.push(`${changes}±`)        // export'lendi, working tree dirty
+    if (st.ahead)  parts.push(`↑${st.ahead}`)
+    if (st.behind) parts.push(`↓${st.behind}`)
+    gitBadgeText.value = parts.join(' · ')
+    gitBadgeColor.value = (unsynced || changes || st.ahead || st.behind) ? 'dirty' : 'clean'
   } catch {
     gitBadgeText.value = 'git error'; gitBadgeColor.value = 'dirty'
   }
@@ -45,6 +54,7 @@ async function loadWorkspaces() {
   try {
     workspaces.value = await ListWorkspaces() ?? []
     activeWs.value = await ActiveWorkspaceID() ?? ''
+    setActiveDirty(activeWs.value)
     await refreshGitBadge()
   } catch { /* keep last */ }
 }
@@ -57,10 +67,15 @@ function openGit(wsId: string, wsName: string) {
 }
 
 function isBound(wsId: string) { return !!gitBinds[wsId] }
-async function onGitModalClose() {
+async function onGitModalClose(committed: boolean) {
   showGit.value = false
+  if (committed) clearWsDirty(gitTargetWsId.value)
   await refreshGitBadge()
 }
+
+// Edit event'i geldiğinde badge'i de yenile — kullanıcı save'lediği anda
+// title bar'da ★ belirsin diye.
+Events.On('collection:edited', () => { refreshGitBadge() })
 async function pickWs(id: string) {
   if (id === activeWs.value) { showWs.value = false; return }
   try { await SwitchWorkspace(id) ; activeWs.value = id } catch { /* ignore */ }

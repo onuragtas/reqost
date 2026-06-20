@@ -334,7 +334,8 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [x] **Status badge** — title bar'da `branch · N change(s)` (clean: yeşil, dirty: turuncu).
 - [x] **Branches modal** — switch dropdown'u + "+ New branch".
 - [x] **Snapshot & commit** — Export + Commit tek tıkla; ayrı "Commit current tree".
-- [ ] **Pull / push UI** (henüz manual: `git pull/push` terminalden).
+- [x] **Pull / Push / Fetch UI** — modal'da düğmeler + title bar badge'inde `↑N ↓N` sayaçları; pull dirty tree'de blocklu, push upstream yoksa otomatik `-u origin <branch>`.
+- [x] **Set remote (origin)** — "Add origin…" / "Change…" prompt → `git remote add/set-url`.
 - [ ] **Conflict UI** (3-way merge collection.json üzerinde).
 
 ### G17 · Network detay

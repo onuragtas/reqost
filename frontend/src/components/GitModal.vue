@@ -4,12 +4,17 @@ import {
   Init as GitInit, Status as GitStatus,
   Export as GitExport, Commit as GitCommit,
   Branches as GitBranches, Checkout as GitCheckout,
+  Push as GitPush, Pull as GitPull, Fetch as GitFetch, SetRemote as GitSetRemote,
 } from '../../bindings/reqost/gitservice'
 import { useGitBind } from '../composables/useGitBind'
 import { useDialog } from '../composables/useDialog'
 
 const props = defineProps<{ open: boolean; workspaceId: string; workspaceName: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [committed: boolean] }>()
+
+// Track whether the user committed inside this modal session so the close
+// handler can clear the workspace's "unsynced to git" flag.
+const didCommit = ref(false)
 
 const { get: getBind, set: setBind } = useGitBind()
 const dialog = useDialog()
@@ -37,14 +42,35 @@ async function refresh() {
   } finally { busy.value = false }
 }
 
+// Auto-export the current workspace into the bound directory whenever the
+// modal opens. Without this, in-app edits to the SQLite index don't appear in
+// `git status` until the user manually triggers Snapshot — leading to the
+// "I changed an endpoint but git looks clean" foot-gun.
+async function autoExport() {
+  if (!path.value || !status.value?.hasRepo) return
+  try {
+    await GitExport(path.value, props.workspaceName)
+  } catch { /* surface via refresh() error path */ }
+}
+
 // Re-read state every time the modal is reopened or workspace changes.
 watch(
   () => [props.open, props.workspaceId] as const,
-  ([open, ws]) => {
+  async ([open, ws]) => {
     if (!open) return
+    didCommit.value = false
     path.value = getBind(ws as string) || ''
     message.value = ''
-    refresh()
+    await refresh()
+    // Surface in-app edits as on-disk diff every time the user opens the
+    // modal — without this they look "clean" until Snapshot runs.
+    if (path.value && status.value?.hasRepo) {
+      await autoExport()
+      await refresh()
+      if ((status.value?.status ?? '').trim()) {
+        message.value = '↻ Exported current workspace — pending changes below reflect what would be committed.'
+      }
+    }
   },
   { immediate: true },
 )
@@ -77,6 +103,7 @@ async function snapshotToGit() {
     if (!msg.trim()) { busy.value = false; return }
     await GitCommit(path.value, msg.trim())
     message.value = '✓ Snapshot committed'
+    didCommit.value = true
     await refresh()
   } catch (e: any) {
     message.value = e?.message ?? String(e)
@@ -91,8 +118,53 @@ async function commitOnly() {
   try {
     await GitCommit(path.value, msg.trim())
     message.value = '✓ Committed'
+    didCommit.value = true
     await refresh()
   } catch (e: any) { message.value = e?.message ?? String(e) }
+  finally { busy.value = false }
+}
+
+async function push() {
+  if (!path.value) return
+  busy.value = true; message.value = ''
+  try {
+    await GitPush(path.value)
+    message.value = '✓ Pushed'
+    didCommit.value = true
+    await refresh()
+  } catch (e: any) { message.value = `push: ${e?.message ?? e}` }
+  finally { busy.value = false }
+}
+async function pull() {
+  if (!path.value) return
+  busy.value = true; message.value = ''
+  try {
+    await GitPull(path.value)
+    message.value = '✓ Pulled (fast-forward)'
+    await refresh()
+  } catch (e: any) { message.value = `pull: ${e?.message ?? e}` }
+  finally { busy.value = false }
+}
+async function fetchRemote() {
+  if (!path.value) return
+  busy.value = true; message.value = ''
+  try {
+    await GitFetch(path.value)
+    message.value = '✓ Fetched'
+    await refresh()
+  } catch (e: any) { message.value = `fetch: ${e?.message ?? e}` }
+  finally { busy.value = false }
+}
+async function setRemote() {
+  if (!path.value) return
+  const url = await dialog.prompt('Remote URL (origin)', status.value?.remote ? '' : 'git@github.com:user/repo.git')
+  if (!url?.trim()) return
+  busy.value = true; message.value = ''
+  try {
+    await GitSetRemote(path.value, 'origin', url.trim())
+    message.value = `✓ Remote origin → ${url.trim()}`
+    await refresh()
+  } catch (e: any) { message.value = `remote: ${e?.message ?? e}` }
   finally { busy.value = false }
 }
 
@@ -115,11 +187,11 @@ async function newBranch() {
 </script>
 
 <template>
-  <div v-if="open" class="overlay" @click.self="emit('close')">
+  <div v-if="open" class="overlay" @click.self="emit('close', didCommit)">
     <div class="modal">
       <header class="head">
         <span class="title">Git — {{ workspaceName }}</span>
-        <button class="close" @click="emit('close')">✕</button>
+        <button class="close" @click="emit('close', didCommit)">✕</button>
       </header>
 
       <section class="row">
@@ -153,6 +225,23 @@ async function newBranch() {
         </div>
       </section>
 
+      <section v-if="path && status?.hasRepo" class="row">
+        <label>Remote</label>
+        <div class="branch-line">
+          <code class="path">{{ status.remote || '(no remote)' }}</code>
+          <button class="btn" @click="setRemote">{{ status.remote ? 'Change…' : 'Add origin…' }}</button>
+        </div>
+        <div v-if="status.upstream" class="tracking">
+          <span class="badge branch">↑ {{ status.upstream }}</span>
+          <span v-if="status.ahead > 0"  class="badge warn">↑ {{ status.ahead }} to push</span>
+          <span v-if="status.behind > 0" class="badge warn">↓ {{ status.behind }} to pull</span>
+          <span v-if="!status.ahead && !status.behind" class="badge clean">up to date</span>
+        </div>
+        <p v-else-if="status.remote" class="hint">
+          Current branch has no upstream — first <strong>Push</strong> sets it to <code>origin/{{ status.branch }}</code>.
+        </p>
+      </section>
+
       <section v-if="path && status?.hasRepo && dirty" class="row diff">
         <label>Pending changes</label>
         <pre class="porcelain selectable">{{ status.status.trim() }}</pre>
@@ -165,6 +254,23 @@ async function newBranch() {
         <button class="btn" :disabled="busy" @click="commitOnly">
           Commit current tree
         </button>
+        <span class="action-sep"></span>
+        <button
+          class="btn" :disabled="busy || !status.remote || dirty"
+          :title="dirty ? 'Working tree is dirty — commit first' : !status.remote ? 'No remote configured' : 'git pull --ff-only'"
+          @click="pull"
+        >⇣ Pull</button>
+        <button
+          class="btn" :disabled="busy || !status.remote"
+          :title="!status.remote ? 'No remote configured' : 'git push'"
+          @click="push"
+        >⇡ Push{{ status.ahead ? ` (${status.ahead})` : '' }}</button>
+        <button
+          class="btn" :disabled="busy || !status.remote"
+          :title="'git fetch — refreshes ahead/behind counters without merging'"
+          @click="fetchRemote"
+        >⟳ Fetch</button>
+        <span class="action-sep"></span>
         <button class="btn" :disabled="busy" @click="refresh">↻ Refresh</button>
       </section>
 
@@ -200,5 +306,9 @@ async function newBranch() {
 .branch-line select { background: var(--bg-input); border: 1px solid var(--border-strong); color: var(--text); border-radius: 4px; padding: 5px 8px; font: 12px monospace; }
 .branch-line select:focus { outline: none; border-color: var(--accent); }
 .porcelain { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; padding: 8px; max-height: 160px; overflow: auto; color: var(--text); font: 11px/1.5 monospace; white-space: pre; }
-.msg { font-size: 11px; color: var(--text); padding: 6px 18px 14px; }
+.msg { font-size: 11px; color: var(--text); padding: 6px 18px 14px; white-space: pre-wrap; word-break: break-word; }
+.tracking { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.action-sep { width: 1px; height: 20px; background: var(--border); align-self: center; }
+.hint { font-size: 11px; color: var(--text-faint); }
+.hint code { background: var(--bg-input); padding: 0 4px; border-radius: 3px; font-size: 10.5px; }
 </style>

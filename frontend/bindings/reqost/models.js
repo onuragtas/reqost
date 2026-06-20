@@ -54,8 +54,7 @@ export class GRPCResult {
 }
 
 /**
- * GitStatus is a coarse report on a working tree. Output is what `git status
- * --porcelain` returns (empty = clean).
+ * GitStatus is a coarse report on a working tree.
  */
 export class GitStatus {
     /**
@@ -72,7 +71,7 @@ export class GitStatus {
         }
         if (!("status" in $$source)) {
             /**
-             * porcelain dump
+             * `git status --porcelain` (empty = clean)
              * @member
              * @type {string}
              */
@@ -84,6 +83,39 @@ export class GitStatus {
              * @type {boolean}
              */
             this["hasRepo"] = false;
+        }
+        if (!("remote" in $$source)) {
+            /**
+             * Remote tracking — empty when the local branch has no upstream
+             * configured (e.g. fresh `git init` with no remote yet).
+             * @member
+             * @type {string}
+             */
+            this["remote"] = "";
+        }
+        if (!("upstream" in $$source)) {
+            /**
+             * e.g. "origin/master"
+             * @member
+             * @type {string}
+             */
+            this["upstream"] = "";
+        }
+        if (!("ahead" in $$source)) {
+            /**
+             * commits to push
+             * @member
+             * @type {number}
+             */
+            this["ahead"] = 0;
+        }
+        if (!("behind" in $$source)) {
+            /**
+             * commits to pull
+             * @member
+             * @type {number}
+             */
+            this["behind"] = 0;
         }
 
         Object.assign(this, $$source);

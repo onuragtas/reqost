@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -17,12 +18,17 @@ type GitService struct {
 
 func NewGitService(c *CollectionService) *GitService { return &GitService{collSvc: c} }
 
-// GitStatus is a coarse report on a working tree. Output is what `git status
-// --porcelain` returns (empty = clean).
+// GitStatus is a coarse report on a working tree.
 type GitStatus struct {
 	Branch  string `json:"branch"`
-	Status  string `json:"status"`  // porcelain dump
+	Status  string `json:"status"`  // `git status --porcelain` (empty = clean)
 	HasRepo bool   `json:"hasRepo"`
+	// Remote tracking — empty when the local branch has no upstream
+	// configured (e.g. fresh `git init` with no remote yet).
+	Remote  string `json:"remote"`
+	Upstream string `json:"upstream"` // e.g. "origin/master"
+	Ahead   int    `json:"ahead"`    // commits to push
+	Behind  int    `json:"behind"`   // commits to pull
 }
 
 // Init turns dir into a git repo (idempotent if already one).
@@ -36,7 +42,8 @@ func (s *GitService) Init(dir string) error {
 	return runGit(dir, "init")
 }
 
-// Status reports branch + porcelain status.
+// Status reports branch + porcelain status + tracking info. Tracking fields
+// stay empty when the local branch has no upstream configured.
 func (s *GitService) Status(dir string) (*GitStatus, error) {
 	out := &GitStatus{}
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
@@ -47,6 +54,25 @@ func (s *GitService) Status(dir string) (*GitStatus, error) {
 	out.Branch = strings.TrimSpace(branch)
 	st, _ := capture(dir, "git", "status", "--porcelain")
 	out.Status = st
+
+	// Remote name (first listed). With no remote, `git remote` is empty.
+	if rs, err := capture(dir, "git", "remote"); err == nil {
+		if line := strings.TrimSpace(strings.SplitN(rs, "\n", 2)[0]); line != "" {
+			out.Remote = line
+		}
+	}
+	// Upstream (e.g. origin/master). When unset the command exits non-zero.
+	if up, err := capture(dir, "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err == nil {
+		out.Upstream = strings.TrimSpace(up)
+		// rev-list left<right gives "<ahead> <behind>" when upstream exists.
+		if cnt, err := capture(dir, "git", "rev-list", "--left-right", "--count", "HEAD..."+out.Upstream); err == nil {
+			parts := strings.Fields(strings.TrimSpace(cnt))
+			if len(parts) == 2 {
+				out.Ahead, _ = strconv.Atoi(parts[0])
+				out.Behind, _ = strconv.Atoi(parts[1])
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -118,6 +144,67 @@ func (s *GitService) Checkout(dir, branch string) error {
 		return nil
 	}
 	return runGit(dir, "checkout", "-b", branch)
+}
+
+// Push pushes the current branch. When the local branch has no upstream
+// yet (e.g. just `git init && git remote add`), the first push sets it.
+func (s *GitService) Push(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return fmt.Errorf("not a git repo: %s", dir)
+	}
+	branch, err := capture(dir, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "HEAD" {
+		return fmt.Errorf("detached HEAD — checkout a branch first")
+	}
+	// If upstream is missing, default to `origin <branch>` (with -u so the
+	// link sticks for future plain `git push`/`git pull`).
+	if _, err := capture(dir, "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err != nil {
+		return runGit(dir, "push", "-u", "origin", branch)
+	}
+	return runGit(dir, "push")
+}
+
+// Pull fetches + merges the tracked branch. Refuses on a dirty working tree
+// to avoid surprise conflicts.
+func (s *GitService) Pull(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return fmt.Errorf("not a git repo: %s", dir)
+	}
+	if st, _ := capture(dir, "git", "status", "--porcelain"); strings.TrimSpace(st) != "" {
+		return fmt.Errorf("working tree is dirty — commit first or discard changes")
+	}
+	if _, err := capture(dir, "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err != nil {
+		return fmt.Errorf("current branch has no upstream — set a remote first")
+	}
+	return runGit(dir, "pull", "--ff-only")
+}
+
+// Fetch updates remote refs without merging — useful so Status's ahead/behind
+// reflects what the server actually has.
+func (s *GitService) Fetch(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return fmt.Errorf("not a git repo: %s", dir)
+	}
+	return runGit(dir, "fetch", "--quiet")
+}
+
+// SetRemote adds or rewrites a remote URL (defaults to `origin`).
+func (s *GitService) SetRemote(dir, name, url string) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		return fmt.Errorf("not a git repo: %s", dir)
+	}
+	if name == "" {
+		name = "origin"
+	}
+	// add → if already present, rewrite via set-url.
+	if err := runGit(dir, "remote", "add", name, url); err == nil {
+		return nil
+	}
+	return runGit(dir, "remote", "set-url", name, url)
 }
 
 func runGit(dir string, args ...string) error {
