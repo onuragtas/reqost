@@ -12,6 +12,10 @@ const props = defineProps<{
   matchFn: (text: string) => boolean
   defaultOpen?: boolean
   arrayIndex?: boolean
+  // Dotted JSONPath up to and including this node. Root passes ''.
+  path?: string
+  // Bubble the picked JSONPath up to JsonTree so it can copy to clipboard.
+  onPick?: (path: string) => void
 }>()
 
 const open = ref<boolean>(!!props.defaultOpen || props.depth < 1)
@@ -51,6 +55,24 @@ function toggle() {
   if (isLeaf.value) return
   open.value = !open.value
 }
+
+// Build a JSONPath for this node from the parent's path. Numeric segments
+// (array indices) use bracket notation so the result is unambiguous.
+function childPath(childKey: string, parentKind: 'object' | 'array' | string): string {
+  const base = props.path ?? ''
+  if (parentKind === 'array') return `${base}[${childKey}]`
+  // Identifier-safe key: dot. Otherwise bracket+quote.
+  if (/^[A-Za-z_$][\w$]*$/.test(childKey)) return base ? `${base}.${childKey}` : `$.${childKey}`
+  const safe = childKey.replace(/'/g, "\\'")
+  return `${base ? base : '$'}['${safe}']`
+}
+
+// "Self-pick" for leaves: click the value → copy *this* node's path.
+function pickSelf() {
+  if (!props.onPick) return
+  const p = props.path || '$'
+  props.onPick(p)
+}
 </script>
 
 <template>
@@ -65,7 +87,11 @@ function toggle() {
       <span v-if="keyName" class="colon">:</span>
 
       <template v-if="isLeaf">
-        <span class="val" :class="['k-' + kind, { hit: valueMatch }]">{{ valueDisplay }}</span>
+        <span
+          class="val pickable" :class="['k-' + kind, { hit: valueMatch }]"
+          :title="`Copy JSONPath: ${path || '$'}`"
+          @click.stop="pickSelf"
+        >{{ valueDisplay }}</span>
       </template>
       <template v-else>
         <span v-if="!open" class="sum">{{ summary }}</span>
@@ -83,6 +109,8 @@ function toggle() {
         :query="query"
         :matchFn="matchFn"
         :arrayIndex="kind === 'array'"
+        :path="childPath(k, kind)"
+        :onPick="onPick"
       />
       <div class="brk close" :style="{ paddingLeft: '0' }">{{ kind === 'array' ? ']' : '}' }}</div>
     </div>
@@ -104,6 +132,8 @@ function toggle() {
 .key.hit, .val.hit { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); border-radius: 2px; padding: 0 2px; }
 .colon { color: var(--text-faint); }
 .val { word-break: break-all; }
+.val.pickable { cursor: pointer; border-radius: 2px; padding: 0 2px; }
+.val.pickable:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); outline: 1px dashed var(--accent); }
 .k-string  { color: #49cc90; }
 .k-number  { color: #fca130; }
 .k-boolean { color: #50e3c2; }

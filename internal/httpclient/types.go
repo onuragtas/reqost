@@ -29,11 +29,16 @@ type Auth struct {
 
 // FormField is one row of a urlencoded or multipart form body. For Type=="file"
 // Value is a local filesystem path that gets streamed into a multipart part.
+//
+// ContentType overrides the default per-part Content-Type — important when
+// the API expects a JSON part alongside a binary file upload (e.g. SaaS
+// "upload + metadata" endpoints).
 type FormField struct {
-	Key     string `json:"key"`
-	Value   string `json:"value"`
-	Type    string `json:"type"` // "text" | "file"
-	Enabled bool   `json:"enabled"`
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	Type        string `json:"type"` // "text" | "file"
+	Enabled     bool   `json:"enabled"`
+	ContentType string `json:"contentType,omitempty"`
 }
 
 // Request is the protocol-agnostic input to an executor. Only "http" is
@@ -58,6 +63,7 @@ type Request struct {
 	InsecureSkipVerify bool              `json:"insecureSkipVerify"` // false = verify TLS
 	ProxyURL           string            `json:"proxyURL"`           // empty = system proxy from env
 	ClientCerts        []ClientCert      `json:"clientCerts"`        // mTLS: cert+key matched against URL host
+	CAFilePath         string            `json:"caFilePath"`         // PEM bundle to trust in addition to the system roots; empty = system-only
 }
 
 // ClientCert is a host-pattern → certificate mapping. HostPattern matches via

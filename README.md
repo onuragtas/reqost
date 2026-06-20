@@ -61,7 +61,7 @@ If the binary lives in a system-owned path (e.g. `/usr/local/bin/`) the install 
 
 ## Build from source
 
-Prerequisites: Go 1.25, Node 20+, [Task](https://taskfile.dev).
+Prerequisites: Go 1.25, **Node 20.19+ or 22.12+** (Vite 8 + rolldown requirement; a `.nvmrc` is checked in — run `nvm use` in the repo root), [Task](https://taskfile.dev).
 
 ```bash
 git clone https://github.com/onuragtas/reqost

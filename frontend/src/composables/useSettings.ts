@@ -15,6 +15,7 @@ export interface AppSettings {
   defaultMaxRedirects: number    // 0 = library default
   proxyURL: string               // empty = use system proxy from env
   clientCerts: ClientCert[]      // mTLS — first matching pattern wins
+  caFilePath: string             // additional PEM root bundle; empty = system roots only
 }
 
 const KEY = 'reqost:settings:v1'
@@ -26,6 +27,7 @@ const DEFAULTS: AppSettings = {
   defaultMaxRedirects: 10,
   proxyURL: '',
   clientCerts: [],
+  caFilePath: '',
 }
 
 function load(): AppSettings {

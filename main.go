@@ -80,6 +80,7 @@ func main() {
 	sseSvc.setEmitter(app.Event)
 	grpcSvc.setEmitter(app.Event)
 	oauthSvc.setApp(app)
+	pluginSvc.setEmitter(app.Event)
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "ReQost",

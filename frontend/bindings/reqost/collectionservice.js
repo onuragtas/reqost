@@ -131,6 +131,23 @@ export function ExportCollectionToFile(path, name) {
 }
 
 /**
+ * ExportWorkspaceZip bundles the active workspace's collection + environment
+ * state into a single .zip the user can ship via email / drop into iCloud /
+ * archive. Layout:
+ * 
+ * 	collection.json   — Postman v2.1 export of the collection
+ * 	environments.json — envstore.State dump
+ * 	manifest.json     — id + name + exportedAt timestamp
+ * 
+ * Caller picks the destination path via the native save dialog.
+ * @param {string} path
+ * @returns {$CancellablePromise<void>}
+ */
+export function ExportWorkspaceZip(path) {
+    return $Call.ByID(216068695, path);
+}
+
+/**
  * GetChildren returns the direct children of a folder node.
  * @param {string} parentID
  * @returns {$CancellablePromise<index$0.TreeNode[]>}
@@ -224,6 +241,18 @@ export function ImportHARBytes(data) {
 }
 
 /**
+ * ImportWorkspaceZip restores a previously-exported zip into the *current*
+ * workspace. We MERGE (collection items get AddItems'd, environments
+ * LoadFromBytes-merged). The user can switch workspaces first if they want
+ * the import isolated.
+ * @param {string} path
+ * @returns {$CancellablePromise<void>}
+ */
+export function ImportWorkspaceZip(path) {
+    return $Call.ByID(3149685720, path);
+}
+
+/**
  * ListRequestsUnder returns the requests at/below a node in run order. Used by
  * the Collection Runner.
  * @param {string} id
@@ -269,6 +298,15 @@ export function PickExport(name) {
 }
 
 /**
+ * PickExportWorkspaceZip opens a native save dialog and writes the workspace
+ * archive there. Returns the chosen path ("" if cancelled).
+ * @returns {$CancellablePromise<string>}
+ */
+export function PickExportWorkspaceZip() {
+    return $Call.ByID(3446216262);
+}
+
+/**
  * PickImport opens a native open-file dialog and imports the chosen collection.
  * Returns the selected path ("" if the user cancelled). Import runs async and
  * emits the usual collection:* events.
@@ -286,6 +324,15 @@ export function PickImport() {
  */
 export function PickImportOpenAPI() {
     return $Call.ByID(4109996867);
+}
+
+/**
+ * PickImportWorkspaceZip opens a native open dialog and merges the picked
+ * archive into the active workspace.
+ * @returns {$CancellablePromise<string>}
+ */
+export function PickImportWorkspaceZip() {
+    return $Call.ByID(3013774757);
 }
 
 /**

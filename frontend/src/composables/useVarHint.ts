@@ -39,6 +39,18 @@ export function useVarHint() {
     return out
   })
 
+  // Recognised Postman-style dynamic helpers. Backend resolves these at send
+  // time; the hint just labels them so the user knows the placeholder is
+  // legitimate and not a missing env var.
+  const DYNAMIC_VARS = new Set([
+    '$timestamp', '$isoTimestamp', '$unixEpochMs',
+    '$guid', '$randomUUID', '$randomInt', '$randomBoolean',
+    '$randomEmail', '$randomFirstName', '$randomLastName', '$randomFullName',
+    '$randomUserName', '$randomPassword', '$randomCity', '$randomCountry',
+    '$randomCountryCode', '$randomPhoneNumber', '$randomUrl', '$randomIP',
+    '$randomColor', '$randomCompanyName', '$randomLoremWord', '$randomLoremSentence',
+  ])
+
   function showVarHint(e: MouseEvent, text: string) {
     const seen = new Set<string>()
     const pairs: Pair[] = []
@@ -48,6 +60,16 @@ export function useVarHint() {
       const name = m[1].trim()
       if (!name || seen.has(name)) continue
       seen.add(name)
+      if (DYNAMIC_VARS.has(name)) {
+        pairs.push({ name, value: '(generated on send)', found: true, active: true, envName: 'dynamic' })
+        continue
+      }
+      // Insomnia-style response refs: {{Name.response.body.path}} — flagged
+      // as "ref" so the hint doesn't claim they're missing.
+      if (/^[\w-]+\.response\./.test(name)) {
+        pairs.push({ name, value: '(resolved from previous response)', found: true, active: true, envName: 'response ref' })
+        continue
+      }
       const src = varSourceMap.value[name]
       pairs.push({
         name,

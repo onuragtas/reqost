@@ -53,7 +53,7 @@ func New() *Client {
 func (c *Client) transportFor(req Request) http.RoundTripper {
 	clientCert := matchClientCert(req.ClientCerts, req.URL)
 
-	if req.ProxyURL == "" && clientCert == nil {
+	if req.ProxyURL == "" && clientCert == nil && req.CAFilePath == "" {
 		if req.InsecureSkipVerify {
 			return c.insecureTransp
 		}
@@ -63,13 +63,19 @@ func (c *Client) transportFor(req Request) http.RoundTripper {
 	// With mTLS we always build a fresh transport so the cert lives only on
 	// this request's pool — switching identities mid-session shouldn't leak
 	// the previous one into a pooled connection.
-	if clientCert != nil {
+	if clientCert != nil || req.CAFilePath != "" {
+		tlsCfg := &tls.Config{
+			InsecureSkipVerify: req.InsecureSkipVerify, //nolint:gosec
+		}
+		if clientCert != nil {
+			tlsCfg.Certificates = []tls.Certificate{*clientCert}
+		}
+		if pool := loadCAPool(req.CAFilePath); pool != nil {
+			tlsCfg.RootCAs = pool
+		}
 		t := &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			TLSClientConfig: &tls.Config{
-				Certificates:       []tls.Certificate{*clientCert},
-				InsecureSkipVerify: req.InsecureSkipVerify, //nolint:gosec
-			},
+			Proxy:           http.ProxyFromEnvironment,
+			TLSClientConfig: tlsCfg,
 		}
 		if req.ProxyURL != "" {
 			if u, err := url.Parse(req.ProxyURL); err == nil {

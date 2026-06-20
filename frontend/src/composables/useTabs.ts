@@ -4,7 +4,12 @@ import type { FlatNode } from './useTree'
 import { parseQuery } from './url'
 
 export interface HeaderRow { key: string; value: string; enabled: boolean }
-export interface FormRow { key: string; value: string; type: 'text' | 'file'; enabled: boolean }
+export interface FormRow {
+  key: string; value: string; type: 'text' | 'file'; enabled: boolean
+  // Override Content-Type for this part (multipart only). Empty = default
+  // (text/plain or sniffed from the file extension).
+  contentType?: string
+}
 export type BodyType = 'none' | 'raw' | 'json' | 'urlencoded' | 'formdata' | 'graphql' | 'binary' | 'xml' | 'html' | 'javascript' | 'text'
 
 // Per-request execution settings. undefined means "inherit the app default".

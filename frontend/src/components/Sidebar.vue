@@ -6,6 +6,7 @@ import {
   PickImport, PickImportOpenAPI, PickExport, CreateRequest, CreateFolder, RenameNode, DeleteNode,
   GetRequestDetail, MoveNode, DuplicateNode, ImportFromURL, ImportAllFromPostman, ClearAll,
   ImportHARBytes, GetFolderContext, SetFolderContext,
+  PickExportWorkspaceZip, PickImportWorkspaceZip,
 } from '../../bindings/reqost/collectionservice'
 import { PickImportEnv } from '../../bindings/reqost/envservice'
 import { useTree, type FlatNode } from '../composables/useTree'
@@ -172,6 +173,8 @@ function openHeaderMenu(e: MouseEvent) {
       { label: 'Import HAR (paste)…', run: onImportHAR },
       { label: 'Import from URL…', run: onImportFromURL },
       { label: 'Export Collection…', run: onExport },
+      { label: 'Export Workspace (.zip)…', run: onExportWorkspaceZip },
+      { label: 'Import Workspace (.zip)…', run: onImportWorkspaceZip },
       { label: 'Delete All', run: onClearAll, danger: true },
     ],
   }
@@ -252,6 +255,25 @@ async function copyCurl(node: FlatNode) {
     // Clipboard can be blocked in the webview — show it so the user can copy.
     await dialog.prompt('Copy this cURL command', curl)
   }
+}
+
+async function onExportWorkspaceZip() {
+  try {
+    const path = await PickExportWorkspaceZip()
+    if (path) {
+      statusMsg.value = `Workspace exported → ${path}`
+      setTimeout(() => { if (statusMsg.value.startsWith('Workspace exported')) statusMsg.value = '' }, 2500)
+    }
+  } catch (e) { flashError('Workspace export', e) }
+}
+async function onImportWorkspaceZip() {
+  try {
+    const path = await PickImportWorkspaceZip()
+    if (path) {
+      statusMsg.value = 'Workspace imported'
+      setTimeout(() => { if (statusMsg.value === 'Workspace imported') statusMsg.value = '' }, 2000)
+    }
+  } catch (e) { flashError('Workspace import', e) }
 }
 
 async function onExport() {

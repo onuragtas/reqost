@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -43,6 +44,44 @@ func (s *EnvService) LoadEnvironments() (envstore.State, error) {
 // SaveEnvironments persists the whole environment document.
 func (s *EnvService) SaveEnvironments(state envstore.State) error {
 	return s.store.Save(state)
+}
+
+// exportRaw returns the JSON-marshalled current state — used by
+// CollectionService.ExportWorkspaceZip so the whole workspace can be packed.
+func (s *EnvService) exportRaw() ([]byte, error) {
+	st, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(st, "", "  ")
+}
+
+// importRaw merges an envstore.State JSON blob into the current store.
+// Environments with matching id are overwritten; new ids are appended.
+func (s *EnvService) importRaw(data []byte) error {
+	var incoming envstore.State
+	if err := json.Unmarshal(data, &incoming); err != nil {
+		return err
+	}
+	cur, err := s.store.Load()
+	if err != nil {
+		return err
+	}
+	byID := map[string]int{}
+	for i, e := range cur.Environments {
+		byID[e.ID] = i
+	}
+	for _, e := range incoming.Environments {
+		if idx, ok := byID[e.ID]; ok {
+			cur.Environments[idx] = e
+		} else {
+			cur.Environments = append(cur.Environments, e)
+		}
+	}
+	if cur.ActiveID == "" {
+		cur.ActiveID = incoming.ActiveID
+	}
+	return s.store.Save(cur)
 }
 
 // PickImportEnv opens a native file dialog and imports a Postman environment

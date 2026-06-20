@@ -5,7 +5,8 @@ import { useTheme } from '../composables/useTheme'
 import { useSettings } from '../composables/useSettings'
 import { useUpdate } from '../composables/useUpdate'
 import { RepoSlug } from '../../bindings/reqost/updateservice'
-import { List as ListPlugins, SetEnabled as SetPluginEnabled, Dir as PluginDir } from '../../bindings/reqost/pluginservice'
+import { List as ListPlugins, SetEnabled as SetPluginEnabled, Dir as PluginDir, Reload as ReloadPlugins } from '../../bindings/reqost/pluginservice'
+import { Events } from '@wailsio/runtime'
 
 const { pref, fontSize, setPref, setFontSize } = useTheme()
 const showShortcuts = ref(false)
@@ -21,17 +22,35 @@ const KBD_OPEN_VAR = '{{'
 
 const plugins = ref<any[]>([])
 const pluginDir = ref<string>('')
+const pluginConsole = ref<{ ts: number; plugin: string; level: string; message: string }[]>([])
+const showConsole = ref(false)
 
 async function refreshPlugins() {
-  try { plugins.value = (await ListPlugins()) ?? [] } catch { plugins.value = [] }
+  try { plugins.value = (await ReloadPlugins()) ?? (await ListPlugins()) ?? [] }
+  catch { plugins.value = [] }
   try { pluginDir.value = await PluginDir() ?? '' } catch { /* ignore */ }
 }
 async function togglePlugin(path: string, enabled: boolean) {
   await SetPluginEnabled(path, enabled)
   await refreshPlugins()
 }
+function clearPluginConsole() { pluginConsole.value = [] }
 
-onMounted(refreshPlugins)
+onMounted(() => {
+  refreshPlugins()
+  Events.On('plugin:console', (ev: any) => {
+    const d = ev?.data ?? ev
+    pluginConsole.value.push({
+      ts: Date.now(),
+      plugin:  d?.plugin  ?? '?',
+      level:   d?.level   ?? 'log',
+      message: d?.message ?? '',
+    })
+    if (pluginConsole.value.length > 500) {
+      pluginConsole.value.splice(0, pluginConsole.value.length - 500)
+    }
+  })
+})
 RepoSlug().then(s => { repoSlug.value = s }).catch(() => {})
 
 function openReleases() {
@@ -97,7 +116,17 @@ function openReleases() {
     </section>
 
     <section class="block">
-      <h4>Client certificates (mTLS)</h4>
+      <h4>TLS</h4>
+      <div class="row col">
+        <label>Custom CA bundle (PEM)</label>
+        <input
+          v-model="settings.caFilePath" class="proxy-input"
+          placeholder="/etc/ssl/extra-roots.pem  (additional roots; system roots stay trusted)"
+        />
+      </div>
+      <p class="hint" style="margin-bottom: 10px">Appended to the system trust store — so corporate Zscaler / mitmproxy roots Just Work without disabling SSL verify.</p>
+
+      <h4 style="margin-top: 12px">Client certificates (mTLS)</h4>
       <p class="hint">First pattern that matches a request's host wins. Wildcards: <code>*.corp.local</code> or bare suffix <code>.internal</code>.</p>
       <div v-for="(c, i) in settings.clientCerts" :key="i" class="cert-row">
         <input v-model="c.hostPattern" placeholder="Host (e.g. *.corp.local)" class="cert-in" />
@@ -146,7 +175,25 @@ function openReleases() {
           <span class="plugin-name">{{ p.name }}</span>
         </div>
       </div>
-      <button class="ghost" @click="refreshPlugins">Refresh</button>
+      <div class="row" style="margin-top: 6px;">
+        <button class="ghost" @click="refreshPlugins">Refresh</button>
+        <button class="pill" @click="showConsole = !showConsole">
+          {{ showConsole ? 'Hide console' : 'Console' }}
+          <span v-if="pluginConsole.length" class="cnt">{{ pluginConsole.length }}</span>
+        </button>
+      </div>
+      <div v-if="showConsole" class="plugin-console">
+        <div class="pc-bar">
+          <span>Plugin console — {{ pluginConsole.length }} line(s)</span>
+          <button class="pill" @click="clearPluginConsole">Clear</button>
+        </div>
+        <div v-if="!pluginConsole.length" class="hint">No output yet. Plugins' <code>console.log</code> will appear here.</div>
+        <div v-for="(l, i) in pluginConsole" :key="i" class="pc-row" :class="`lvl-${l.level}`">
+          <span class="pc-plug">{{ l.plugin }}</span>
+          <span class="pc-lvl">{{ l.level }}</span>
+          <span class="pc-msg">{{ l.message }}</span>
+        </div>
+      </div>
     </section>
 
     <section class="block">
@@ -264,6 +311,20 @@ function openReleases() {
 .plugin-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .plugin-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; background: var(--bg-input); border-radius: 4px; }
 .plugin-name { font: 12px monospace; color: var(--text); flex: 1; word-break: break-all; }
+.cnt { background: var(--accent); color: var(--accent-text); border-radius: 8px; padding: 0 6px; font-size: 10px; margin-left: 4px; }
+.plugin-console {
+  margin-top: 8px; max-height: 220px; overflow: auto;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 5px; padding: 6px;
+}
+.pc-bar { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--text-faint); padding: 0 4px 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.pc-row { display: grid; grid-template-columns: 100px 40px 1fr; gap: 6px; padding: 2px 4px; font: 11px monospace; color: var(--text); border-radius: 3px; }
+.pc-row:hover { background: var(--bg-hover); }
+.pc-plug { color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-lvl { text-transform: uppercase; font-size: 9px; color: var(--text-faint); }
+.pc-row.lvl-warn  .pc-lvl, .pc-row.lvl-warn  .pc-msg { color: var(--warn-text); }
+.pc-row.lvl-error .pc-lvl, .pc-row.lvl-error .pc-msg { color: var(--danger); }
+.pc-msg { word-break: break-word; white-space: pre-wrap; }
 .seg { display: inline-flex; background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; overflow: hidden; }
 .seg button { font-size: 11px; padding: 3px 9px; color: var(--text-dim); border-radius: 0; }
 .seg button:hover { color: var(--text); background: var(--bg-hover); }

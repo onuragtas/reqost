@@ -108,6 +108,16 @@ type Loaded struct {
 	hooks Hooks
 }
 
+// ConsoleSink receives every console.{log,info,warn,error} call from any
+// plugin. Caller wires it to the Wails emitter so the frontend Plugin
+// Console panel sees the output.
+type ConsoleSink func(plugin, level, message string)
+
+var consoleSink ConsoleSink
+
+// SetConsoleSink installs a process-wide console hook. Pass nil to detach.
+func SetConsoleSink(s ConsoleSink) { consoleSink = s }
+
 // LoadEnabled returns one runtime per enabled plugin. Caller invokes the
 // hooks; we own no shared mutable state across runtimes.
 func (m *Manager) LoadEnabled() ([]Loaded, error) {
@@ -138,6 +148,11 @@ func load(name, src string) (Loaded, error) {
 	t := time.AfterFunc(2*time.Second, func() { vm.Interrupt("plugin load timeout") })
 	defer t.Stop()
 
+	// console.{log,info,warn,error} → ConsoleSink. Without this hook plugin
+	// output goes to /dev/null and the user can't tell why a plugin is
+	// misbehaving. We forward each call as one event.
+	installConsole(vm, name)
+
 	if _, err := vm.RunString(src); err != nil {
 		return Loaded{}, fmt.Errorf("plugin %s: %w", name, err)
 	}
@@ -153,6 +168,36 @@ func load(name, src string) (Loaded, error) {
 	}
 	return Loaded{Name: name, vm: vm, hooks: hooks}, nil
 }
+
+// installConsole exposes a minimal `console` object to the plugin's runtime.
+// Each call funnels into ConsoleSink with a level tag.
+func installConsole(vm *goja.Runtime, pluginName string) {
+	console := vm.NewObject()
+	emit := func(level string) func(call goja.FunctionCall) goja.Value {
+		return func(call goja.FunctionCall) goja.Value {
+			if consoleSink == nil {
+				return goja.Undefined()
+			}
+			parts := make([]string, 0, len(call.Arguments))
+			for _, a := range call.Arguments {
+				parts = append(parts, a.String())
+			}
+			consoleSink(pluginName, level, strings.Join(parts, " "))
+			return goja.Undefined()
+		}
+	}
+	_ = console.Set("log", emit("log"))
+	_ = console.Set("info", emit("info"))
+	_ = console.Set("warn", emit("warn"))
+	_ = console.Set("error", emit("error"))
+	_ = vm.Set("console", console)
+}
+
+// Reload drops cached plugin runtimes by clearing the manager's read-through
+// behaviour: nothing's actually cached (LoadEnabled reads every time), but
+// calling List forces a re-scan of the directory so newly-added files appear
+// without an app restart. Returns the fresh list.
+func (m *Manager) Reload() ([]Plugin, error) { return m.List() }
 
 // RunPreSend mutates req via every enabled plugin's onPreSend / onTransformBody.
 // Each plugin gets a 2-second watchdog. A panic in one plugin doesn't stop

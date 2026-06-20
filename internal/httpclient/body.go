@@ -6,11 +6,15 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// escapeQuotes escapes `"` so it survives Content-Disposition header values.
+func escapeQuotes(s string) string { return strings.ReplaceAll(s, `"`, `\"`) }
 
 // buildBody turns a request's body spec into an io.Reader plus the Content-Type
 // to set (empty if none). GET/HEAD never carry a body. Variables are
@@ -85,6 +89,7 @@ func buildMultipart(fields []FormField, vars map[string]string) (io.Reader, stri
 			continue
 		}
 		key := interpolate(f.Key, vars)
+		ct := strings.TrimSpace(f.ContentType)
 		if f.Type == "file" {
 			path := interpolate(f.Value, vars)
 			if path == "" {
@@ -94,7 +99,15 @@ func buildMultipart(fields []FormField, vars map[string]string) (io.Reader, stri
 			if err != nil {
 				return nil, "", fmt.Errorf("open upload %s: %w", path, err)
 			}
-			part, err := mw.CreateFormFile(key, filepath.Base(path))
+			var part io.Writer
+			if ct != "" {
+				h := textproto.MIMEHeader{}
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeQuotes(key), escapeQuotes(filepath.Base(path))))
+				h.Set("Content-Type", ct)
+				part, err = mw.CreatePart(h)
+			} else {
+				part, err = mw.CreateFormFile(key, filepath.Base(path))
+			}
 			if err != nil {
 				file.Close()
 				return nil, "", err
@@ -105,7 +118,19 @@ func buildMultipart(fields []FormField, vars map[string]string) (io.Reader, stri
 			}
 			file.Close()
 		} else {
-			if err := mw.WriteField(key, interpolate(f.Value, vars)); err != nil {
+			val := interpolate(f.Value, vars)
+			if ct != "" {
+				h := textproto.MIMEHeader{}
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"`, escapeQuotes(key)))
+				h.Set("Content-Type", ct)
+				part, err := mw.CreatePart(h)
+				if err != nil {
+					return nil, "", err
+				}
+				if _, err := io.WriteString(part, val); err != nil {
+					return nil, "", err
+				}
+			} else if err := mw.WriteField(key, val); err != nil {
 				return nil, "", err
 			}
 		}

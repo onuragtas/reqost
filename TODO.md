@@ -148,7 +148,7 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 
 ### Network / protocol
 - [ ] **SOCKS5 proxy** — şu an sadece HTTP/HTTPS. `http.Transport.DialContext` ile ekle.
-- [ ] **Custom CA trust** — kurumsal kurumlarda sık. `x509.SystemCertPool()` + ek root cert path.
+- [x] **Custom CA trust** — Settings'te "Custom CA bundle (PEM)" path; sistem rootlarına eklenir, `x509.SystemCertPool() + AppendCertsFromPEM`, sonuç path-keyli cache'lenir.
 - [ ] **Request retry button** (failed response'tan sonra direkt yeniden gönder).
 - [ ] **Send timing history graph per request** — küçük sparkline son 10 send'in `totalMs`'i.
 - [ ] **Response truncation banner** — 50 MiB cap'e çarpınca silent → görünür mesaj.
@@ -190,7 +190,7 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 
 ### G2 · Request body & advanced fields
 - [x] **Raw body sub-type dropdown** — JSON/XML/HTML/JavaScript/Text + auto Content-Type.
-- [ ] **multipart/form-data per-part Content-Type** — JSON part vs text part (file upload + JSON gövde yaygın).
+- [x] **multipart/form-data per-part Content-Type** — her form satırında "part C-T" alanı; backend `mw.CreatePart` ile MIME header.
 - [x] **Binary body type** — `application/octet-stream`, file path (Go side `os.Open` streamed).
 - [ ] **MessagePack body** (modern ML API'leri).
 - [ ] **"Sign body" hook** — body hash'i header'a otomatik (HMAC için).
@@ -224,7 +224,7 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 ### G5 · Variables / Environments
 - [ ] **Initial value vs Current value** (Postman pattern: initial committed, current local-only — vault ile uyumlu).
 - [ ] **5 scope katmanı**: Global, Collection, Folder, Request, Environment — explicit precedence dropdown'u.
-- [ ] **Variable inspector** — `{{token}}` hover'da hangi scope'tan resolve oluyor.
+- [x] **Variable inspector** — env source + active/inactive + found/missing + dynamic helpers + response refs.
 - [ ] **"Find usage"** — bir variable'ın hangi request'lerde kullanıldığını listele.
 - [ ] **Quick switcher (Cmd+Shift+E)** — env hızlı değiştirme.
 - [x] **Per-tab variable override** — Settings subtab'inde key/value editor; activeVars üstüne shadow.
@@ -261,7 +261,7 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 - [x] **HTML preview** (sandbox iframe, JS off, srcdoc).
 - [x] **PDF preview** (`<object type="application/pdf">`).
 - [ ] **Diff with previous response** (response history'den seç → side-by-side).
-- [ ] **JSON path picker** (tree node tıkla → `$.path` clipboard).
+- [x] **JSON path picker** — tree node tıkla → `$.foo.bar[0]` clipboard, toast feedback.
 - [x] **Search in response headers** — filter input.
 - [x] **50 MiB truncation banner** — Body sekmesinde uyarı.
 - [ ] **Response time sparkline** son N send.
@@ -314,15 +314,15 @@ Fixed: webview prompt/confirm, loading reactivity, delete SQLITE_BUSY, delete FT
 
 ### G14 · Plugin sistemi iyileştirmeleri
 - [ ] **Manifest.json + permission model** — `network`, `fs`, `timer` izinleri.
-- [ ] **Plugin console** (her plugin için ayrı log panel).
-- [ ] **Plugin reload düğmesi** (disk değişikliği auto-detect değil).
+- [x] **Plugin console** — Settings → Plugins → "Console" toggle; `plugin:console` Wails event'i her plugin'in `console.{log,info,warn,error}` çağrısını level-renkli olarak akıtır.
+- [x] **Plugin reload düğmesi** — Refresh + Reload binding; disk'e yeni `.js` koyup tek tık.
 - [ ] **"Discover plugins" listesi** — GitHub topic `reqost-plugin` ile.
 - [ ] **Plugin context API** — `pm.environment`, `pm.cookies`, `pm.request`, `pm.response` plugin'lere expose.
 - [ ] **Custom auth provider** API — plugin yeni bir AuthType register edebilsin.
 - [ ] **Plugin per-workspace toggle**.
 
 ### G15 · Workspaces / collaboration
-- [ ] **Workspace export/import** — `.zip` (collection.json + environments.json + plugins/ + design.yaml).
+- [x] **Workspace export/import** — `.zip` (collection.json + environments.json + manifest.json); sidebar header menüsünden tetiklenir.
 - [ ] **Workspace activity log** — son N create/delete/move/save (kim, ne, ne zaman; tek kullanıcı için bile undo'ya temel).
 - [ ] **Workspace settings panel** — default request settings (timeout, redirect vs.) per workspace.
 - [ ] **Workspace switcher shortcut** (Cmd+Shift+W).

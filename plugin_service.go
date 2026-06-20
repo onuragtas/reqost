@@ -10,7 +10,33 @@ import (
 // available plugins, toggle them on/off, and surface the plugin directory.
 // Actual hook invocation happens inside ExecService at send time.
 type PluginService struct {
-	mgr *plugins.Manager
+	mgr     *plugins.Manager
+	emitter EventEmitter
+}
+
+// setEmitter wires the Wails event bus so plugin console output (and reload
+// notifications) reach the frontend Plugin Console panel.
+func (s *PluginService) setEmitter(e EventEmitter) {
+	s.emitter = e
+	plugins.SetConsoleSink(func(plugin, level, message string) {
+		if s.emitter == nil {
+			return
+		}
+		s.emitter.Emit("plugin:console", map[string]any{
+			"plugin":  plugin,
+			"level":   level,
+			"message": message,
+		})
+	})
+}
+
+// Reload re-scans the plugin directory so newly-dropped .js files appear in
+// the UI without a full app restart. Returns the refreshed plugin list.
+func (s *PluginService) Reload() ([]plugins.Plugin, error) {
+	if s.mgr == nil {
+		return []plugins.Plugin{}, nil
+	}
+	return s.mgr.Reload()
 }
 
 func NewPluginService() *PluginService {

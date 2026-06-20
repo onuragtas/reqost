@@ -209,6 +209,10 @@ export class Cookie {
 /**
  * FormField is one row of a urlencoded or multipart form body. For Type=="file"
  * Value is a local filesystem path that gets streamed into a multipart part.
+ * 
+ * ContentType overrides the default per-part Content-Type — important when
+ * the API expects a JSON part alongside a binary file upload (e.g. SaaS
+ * "upload + metadata" endpoints).
  */
 export class FormField {
     /**
@@ -244,6 +248,13 @@ export class FormField {
              * @type {boolean}
              */
             this["enabled"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["contentType"] = undefined;
         }
 
         Object.assign(this, $$source);
@@ -435,6 +446,14 @@ export class Request {
              * @type {ClientCert[]}
              */
             this["clientCerts"] = [];
+        }
+        if (!("caFilePath" in $$source)) {
+            /**
+             * PEM bundle to trust in addition to the system roots; empty = system-only
+             * @member
+             * @type {string}
+             */
+            this["caFilePath"] = "";
         }
 
         Object.assign(this, $$source);

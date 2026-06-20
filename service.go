@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -173,6 +174,173 @@ func (s *CollectionService) PickImportOpenAPI() (string, error) {
 	}
 	s.emit("collection:ready", path)
 	return path, nil
+}
+
+// PickExportWorkspaceZip opens a native save dialog and writes the workspace
+// archive there. Returns the chosen path ("" if cancelled).
+func (s *CollectionService) PickExportWorkspaceZip() (string, error) {
+	if s.dialog == nil {
+		return "", fmt.Errorf("dialog unavailable")
+	}
+	d := s.dialog.SaveFile()
+	d.SetFilename(fmt.Sprintf("reqost-%s.zip", strings.ReplaceAll(s.workspaceName(), " ", "-")))
+	path, err := d.PromptForSingleSelection()
+	if err != nil || path == "" {
+		return path, err
+	}
+	if err := s.ExportWorkspaceZip(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// PickImportWorkspaceZip opens a native open dialog and merges the picked
+// archive into the active workspace.
+func (s *CollectionService) PickImportWorkspaceZip() (string, error) {
+	if s.dialog == nil {
+		return "", fmt.Errorf("dialog unavailable")
+	}
+	d := s.dialog.OpenFile()
+	d.SetTitle("Import workspace .zip")
+	d.AddFilter("reqost workspace", "*.zip")
+	d.CanChooseFiles(true)
+	path, err := d.PromptForSingleSelection()
+	if err != nil || path == "" {
+		return path, err
+	}
+	if err := s.ImportWorkspaceZip(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// ExportWorkspaceZip bundles the active workspace's collection + environment
+// state into a single .zip the user can ship via email / drop into iCloud /
+// archive. Layout:
+//
+//	collection.json   — Postman v2.1 export of the collection
+//	environments.json — envstore.State dump
+//	manifest.json     — id + name + exportedAt timestamp
+//
+// Caller picks the destination path via the native save dialog.
+func (s *CollectionService) ExportWorkspaceZip(path string) error {
+	if path == "" {
+		return fmt.Errorf("destination path required")
+	}
+
+	// Materialise pieces first; only then touch the file so an error leaves
+	// the disk untouched.
+	collJSON, err := s.db.ExportJSON(s.workspaceName())
+	if err != nil {
+		return fmt.Errorf("export collection: %w", err)
+	}
+	var envJSON []byte
+	if s.envSvc != nil {
+		envJSON, err = s.envSvc.exportRaw()
+		if err != nil {
+			return fmt.Errorf("export env: %w", err)
+		}
+	}
+	manifest := map[string]any{
+		"id":         s.ws.ActiveID(),
+		"name":       s.workspaceName(),
+		"exportedAt": time.Now().Format(time.RFC3339),
+		"format":     "reqost-workspace/v1",
+	}
+	manifestJSON, _ := json.MarshalIndent(manifest, "", "  ")
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	defer zw.Close()
+
+	addFile := func(name string, data []byte) error {
+		w, err := zw.Create(name)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
+	if err := addFile("collection.json", []byte(collJSON)); err != nil {
+		return err
+	}
+	if len(envJSON) > 0 {
+		if err := addFile("environments.json", envJSON); err != nil {
+			return err
+		}
+	}
+	if err := addFile("manifest.json", manifestJSON); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ImportWorkspaceZip restores a previously-exported zip into the *current*
+// workspace. We MERGE (collection items get AddItems'd, environments
+// LoadFromBytes-merged). The user can switch workspaces first if they want
+// the import isolated.
+func (s *CollectionService) ImportWorkspaceZip(path string) error {
+	if path == "" {
+		return fmt.Errorf("source path required")
+	}
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		return fmt.Errorf("open zip: %w", err)
+	}
+	defer r.Close()
+
+	var collBytes, envBytes []byte
+	for _, f := range r.File {
+		switch f.Name {
+		case "collection.json":
+			collBytes, err = readZipFile(f)
+		case "environments.json":
+			envBytes, err = readZipFile(f)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if len(collBytes) == 0 {
+		return fmt.Errorf("zip missing collection.json — not a reqost workspace export?")
+	}
+
+	items, _, err := collection.ParseBytes(collBytes)
+	if err != nil {
+		return fmt.Errorf("parse collection: %w", err)
+	}
+	if err := s.db.AddItems(items); err != nil {
+		return fmt.Errorf("merge collection: %w", err)
+	}
+	if len(envBytes) > 0 && s.envSvc != nil {
+		if err := s.envSvc.importRaw(envBytes); err != nil {
+			return fmt.Errorf("merge env: %w", err)
+		}
+	}
+	s.emit("collection:ready", "workspace-import")
+	return nil
+}
+
+func readZipFile(f *zip.File) ([]byte, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+func (s *CollectionService) workspaceName() string {
+	for _, w := range s.ws.List() {
+		if w.ID == s.ws.ActiveID() {
+			return w.Name
+		}
+	}
+	return "workspace"
 }
 
 // ImportHARBytes merges a HAR JSON document (typically pasted from browser

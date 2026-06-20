@@ -360,6 +360,7 @@ async function send() {
       insecureSkipVerify: !verifySSL,
       proxyURL: appSettings.proxyURL,
       clientCerts: appSettings.clientCerts.filter(c => c.hostPattern && c.certPath && c.keyPath),
+      caFilePath: appSettings.caFilePath || '',
     }, t.preScript, t.postScript)
 
     const resp = res?.response
@@ -1227,7 +1228,7 @@ function onSetVerifySSL(s: string) {
                 </div>
               </div>
               <div v-else class="kv">
-                <div v-for="(f, i) in active.formFields" :key="i" class="kv-row">
+                <div v-for="(f, i) in active.formFields" :key="i" class="kv-row formrow">
                   <input type="checkbox" v-model="f.enabled" />
                   <input v-model="f.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, f.key)" @mouseleave="hideVarHint" />
                   <select v-if="active.bodyType === 'formdata'" v-model="f.type" class="f-type">
@@ -1235,6 +1236,12 @@ function onSetVerifySSL(s: string) {
                     <option value="file">File</option>
                   </select>
                   <input v-model="f.value" :placeholder="f.type === 'file' ? '/path/to/file' : 'Value'" class="kv-val" @mouseenter="showVarHint($event, f.value)" @mouseleave="hideVarHint" />
+                  <input
+                    v-if="active.bodyType === 'formdata'"
+                    v-model="f.contentType" class="ct-input"
+                    placeholder="(part C-T)"
+                    title="Per-part Content-Type (e.g. application/json)"
+                  />
                   <button class="kv-del" @click="removeForm(i)">✕</button>
                 </div>
                 <button class="add" @click="addForm">+ Add field</button>
@@ -1828,6 +1835,8 @@ function onSetVerifySSL(s: string) {
 .body { display: flex; flex-direction: column; gap: 10px; height: 100%; }
 .body-type select { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; font-size: 12px; padding: 5px 8px; }
 .f-type { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font-size: 11px; padding: 5px; }
+.ct-input { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font: 11px monospace; padding: 5px 6px; width: 140px; color: var(--text-dim); }
+.ct-input:focus { outline: none; border-color: var(--accent); }
 
 .auth { display: flex; flex-direction: column; gap: 10px; max-width: 460px; }
 .auth-type { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); }
