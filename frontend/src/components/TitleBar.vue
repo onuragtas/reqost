@@ -9,6 +9,7 @@ import { Status as GitStatus } from '../../bindings/reqost/gitservice'
 import { useDialog } from '../composables/useDialog'
 import { useGitBind } from '../composables/useGitBind'
 import { useGitDirty } from '../composables/useGitDirty'
+import { ToggleMaximise } from '../../bindings/reqost/windowservice'
 import GitModal from './GitModal.vue'
 
 const { version, updateInfo, applying, applied, checkError, autoCheck, install } = useUpdate()
@@ -109,10 +110,21 @@ async function onInstall() {
   await install()
   if (applied.value) showPopover.value = false
 }
+
+// Double-click anywhere on the title bar background (not on a button or pill)
+// → toggle maximise. Mimics the native macOS / Windows title-bar behaviour
+// that we lost by drawing our own bar.
+function onBarDblClick(e: MouseEvent) {
+  const t = e.target as HTMLElement
+  // Only fire when the click hit the bar itself or the app-name label —
+  // never when bubbling up from an interactive child.
+  if (t.closest('button, select, input, a, .ws-menu, .upd-pop')) return
+  ToggleMaximise().catch(() => { /* ignore */ })
+}
 </script>
 
 <template>
-  <div class="titlebar">
+  <div class="titlebar" @dblclick="onBarDblClick">
     <span class="app-name">ReQost</span>
 
     <div class="ws-wrap">

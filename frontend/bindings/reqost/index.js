@@ -13,6 +13,7 @@ import * as PluginService from "./pluginservice.js";
 import * as SSEService from "./sseservice.js";
 import * as UpdateService from "./updateservice.js";
 import * as WSService from "./wsservice.js";
+import * as WindowService from "./windowservice.js";
 export {
     CollectionService,
     DesignService,
@@ -24,7 +25,8 @@ export {
     PluginService,
     SSEService,
     UpdateService,
-    WSService
+    WSService,
+    WindowService
 };
 
 export {

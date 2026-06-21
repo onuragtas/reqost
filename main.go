@@ -47,6 +47,7 @@ func main() {
 	pluginSvc := NewPluginService()
 	execSvc := NewExecService()
 	execSvc.setPluginSvc(pluginSvc)
+	windowSvc := NewWindowService()
 
 	app := application.New(application.Options{
 		Name:        "ReQost",
@@ -62,6 +63,7 @@ func main() {
 			application.NewService(gitSvc),
 			application.NewService(designSvc),
 			application.NewService(pluginSvc),
+			application.NewService(windowSvc),
 			application.NewService(NewUpdateService()),
 		},
 		Assets: application.AssetOptions{
@@ -82,7 +84,7 @@ func main() {
 	oauthSvc.setApp(app)
 	pluginSvc.setEmitter(app.Event)
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "ReQost",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 50,
@@ -94,6 +96,7 @@ func main() {
 		Width:            1280,
 		Height:           800,
 	})
+	windowSvc.setWindow(mainWindow)
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
