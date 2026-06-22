@@ -127,6 +127,33 @@ tasks:
     cmds:
       - task: create:app:bundle
 
+  dmg:
+    summary: Builds the app and packages it into a distributable .dmg
+    deps:
+      - task: package
+    cmds:
+      - task: create:dmg
+
+  dmg:universal:
+    summary: Builds a universal (arm64 + amd64) .app and packages it into a .dmg
+    deps:
+      - task: package:universal
+    cmds:
+      - task: create:dmg
+
+  create:dmg:
+    summary: Creates a .dmg from an already-built .app bundle
+    internal: true
+    cmds:
+      - rm -rf "{{.BIN_DIR}}/dmg-staging"
+      - mkdir -p "{{.BIN_DIR}}/dmg-staging"
+      - cp -r "{{.BIN_DIR}}/{{.APP_NAME}}.app" "{{.BIN_DIR}}/dmg-staging/"
+      - ln -sf /Applications "{{.BIN_DIR}}/dmg-staging/Applications"
+      - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.dmg"
+      - hdiutil create -volname "{{.APP_NAME}}" -srcfolder "{{.BIN_DIR}}/dmg-staging" -ov -format UDZO "{{.BIN_DIR}}/{{.APP_NAME}}.dmg"
+      - rm -rf "{{.BIN_DIR}}/dmg-staging"
+      - 'echo "✓ DMG created: {{.BIN_DIR}}/{{.APP_NAME}}.dmg"'
+
 
   create:app:bundle:
     summary: Creates an `.app` bundle
