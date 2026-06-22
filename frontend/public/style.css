@@ -26,6 +26,17 @@
     --warn-text:     #fca130;
     --danger:        #f93e3e;
     --ok:            #49cc90;
+
+    /* Syntax highlighting — dark theme (One Dark palette) */
+    --tok-keyword:   #c678dd;
+    --tok-string:    #98c379;
+    --tok-number:    #d19a66;
+    --tok-property:  #61afef;
+    --tok-operator:  #56b6c2;
+    --tok-comment:   #5c6370;
+    --tok-builtin:   #e5c07b;
+    --tok-tag:       #e06c75;
+    --tok-attr:      #d19a66;
 }
 
 :root[data-theme="light"] {
@@ -46,6 +57,17 @@
     --warn-text:     #b56a00;
     --danger:        #e0352b;
     --ok:            #1aa672;
+
+    /* Syntax highlighting — light theme (GitHub Light / Atom One Light palette) */
+    --tok-keyword:   #a626a4;
+    --tok-string:    #50a14f;
+    --tok-number:    #986801;
+    --tok-property:  #4078f2;
+    --tok-operator:  #0184bc;
+    --tok-comment:   #a0a1a7;
+    --tok-builtin:   #c18401;
+    --tok-tag:       #e45649;
+    --tok-attr:      #986801;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

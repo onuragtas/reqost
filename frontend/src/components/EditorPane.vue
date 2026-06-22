@@ -128,6 +128,12 @@ onMounted(() => {
       highlightSelectionMatches(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       keymap.of([
+        // Mod-Enter (Cmd+Enter on Mac, Ctrl+Enter on Win/Linux): mark as handled
+        // so CodeMirror calls e.preventDefault() and doesn't insert a newline.
+        // The event still bubbles to the global window keydown handler which
+        // triggers send(). Without this, pressing Cmd+Enter in the editor body
+        // would both send the request AND insert a newline.
+        { key: 'Mod-Enter', run: () => true },
         ...closeBracketsKeymap,
         ...defaultKeymap,
         ...searchKeymap,
@@ -139,8 +145,8 @@ onMounted(() => {
       langCompartment.of(languageExt(props.language)),
       readonlyCompartment.of(EditorState.readOnly.of(props.readonly)),
       EditorView.theme({
-        '&':            { fontFamily: 'monospace', fontSize: '12px', backgroundColor: 'transparent' },
-        '.cm-scroller': { lineHeight: '1.5' },
+        '&':            { fontFamily: 'monospace', fontSize: '13px', backgroundColor: 'transparent' },
+        '.cm-scroller': { lineHeight: '1.6' },
         '.cm-content':  { padding: '6px 0', caretColor: 'var(--accent)' },
         '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
         '.cm-gutters':  { background: 'transparent', borderRight: '1px solid var(--border)', color: 'var(--text-faint)' },
@@ -308,10 +314,16 @@ watch(() => props.vars, (v) => {
 .editor-pane :deep(.cm-editor.cm-focused) { outline: none; }
 .editor-pane:focus-within { border-color: var(--accent); }
 .editor-pane :deep(.cm-line) { color: var(--text); }
-.editor-pane :deep(.tok-keyword) { color: #c678dd; }
-.editor-pane :deep(.tok-string)  { color: #98c379; }
-.editor-pane :deep(.tok-number)  { color: #d19a66; }
-.editor-pane :deep(.tok-comment) { color: var(--text-faint); font-style: italic; }
+.editor-pane :deep(.tok-keyword)  { color: var(--tok-keyword); }
+.editor-pane :deep(.tok-string)   { color: var(--tok-string); }
+.editor-pane :deep(.tok-number)   { color: var(--tok-number); }
+.editor-pane :deep(.tok-property) { color: var(--tok-property); }
+.editor-pane :deep(.tok-operator) { color: var(--tok-operator); }
+.editor-pane :deep(.tok-comment)  { color: var(--tok-comment); font-style: italic; }
+.editor-pane :deep(.tok-typeName) { color: var(--tok-builtin); }
+.editor-pane :deep(.tok-tagName)  { color: var(--tok-tag); }
+.editor-pane :deep(.tok-attributeName) { color: var(--tok-attr); }
+.editor-pane :deep(.tok-attributeValue) { color: var(--tok-string); }
 .editor-pane :deep(.cm-var) {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
