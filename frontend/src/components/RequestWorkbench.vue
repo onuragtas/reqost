@@ -272,6 +272,54 @@ function commitBulkHeaders() {
   active.value.headers = bulkToHeaders(bulkHeadersText.value)
 }
 
+// ── Bulk form-data / urlencoded edit (Postman-style) ──────────────────────
+// `key:value` per line; a leading `#` disables the row. For multipart form-data
+// a `key:@/path` value marks a file part.
+const bulkForm = ref(false)
+const bulkFormText = ref('')
+
+function formToBulk(): string {
+  return (active.value?.formFields ?? [])
+    .filter(f => f.key.trim())
+    .map(f => `${f.enabled ? '' : '#'}${f.key}:${f.type === 'file' ? '@' : ''}${f.value}`)
+    .join('\n')
+}
+function bulkToForm(text: string, allowFile: boolean): { key: string; value: string; type: 'text' | 'file'; enabled: boolean }[] {
+  const out: { key: string; value: string; type: 'text' | 'file'; enabled: boolean }[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd()
+    if (!line.trim()) continue
+    let enabled = true
+    let s = line
+    if (s.startsWith('#')) { enabled = false; s = s.slice(1) }
+    const colon = s.indexOf(':')
+    if (colon < 1) continue
+    const key = s.slice(0, colon).trim()
+    let value = s.slice(colon + 1).trim()
+    let type: 'text' | 'file' = 'text'
+    if (allowFile && value.startsWith('@')) { type = 'file'; value = value.slice(1).trim() }
+    out.push({ key, value, type, enabled })
+  }
+  return out
+}
+function setBulkForm(on: boolean) {
+  if (on && !bulkForm.value) bulkFormText.value = formToBulk()
+  else if (!on && bulkForm.value) commitBulkForm()
+  bulkForm.value = on
+}
+function commitBulkForm() {
+  if (!active.value) return
+  active.value.formFields = bulkToForm(bulkFormText.value, active.value.bodyType === 'formdata')
+}
+
+// Switching tabs while a bulk editor is open would otherwise leave the textarea
+// bound to the previous tab's text, so a blur-commit could write it onto the
+// new tab. Re-sync from the now-active tab whenever the active id changes.
+watch(() => active.value?.id, () => {
+  if (bulkHeaders.value) bulkHeadersText.value = headersToBulk()
+  if (bulkForm.value) bulkFormText.value = formToBulk()
+})
+
 async function send() {
   const t = active.value
   if (!t || !t.url.trim()) return
@@ -1228,23 +1276,42 @@ function onSetVerifySSL(s: string) {
                 </div>
               </div>
               <div v-else class="kv">
-                <div v-for="(f, i) in active.formFields" :key="i" class="kv-row formrow">
-                  <input type="checkbox" v-model="f.enabled" />
-                  <input v-model="f.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, f.key)" @mouseleave="hideVarHint" />
-                  <select v-if="active.bodyType === 'formdata'" v-model="f.type" class="f-type">
-                    <option value="text">Text</option>
-                    <option value="file">File</option>
-                  </select>
-                  <input v-model="f.value" :placeholder="f.type === 'file' ? '/path/to/file' : 'Value'" class="kv-val" @mouseenter="showVarHint($event, f.value)" @mouseleave="hideVarHint" />
-                  <input
-                    v-if="active.bodyType === 'formdata'"
-                    v-model="f.contentType" class="ct-input"
-                    placeholder="(part C-T)"
-                    title="Per-part Content-Type (e.g. application/json)"
-                  />
-                  <button class="kv-del" @click="removeForm(i)">✕</button>
+                <div class="kv-bar">
+                  <button class="kv-mode" :class="{ active: !bulkForm }" @click="setBulkForm(false)">Key-Value</button>
+                  <button class="kv-mode" :class="{ active: bulkForm }" @click="setBulkForm(true)">Bulk Edit</button>
                 </div>
-                <button class="add" @click="addForm">+ Add field</button>
+
+                <template v-if="!bulkForm">
+                  <div v-for="(f, i) in active.formFields" :key="i" class="kv-row formrow">
+                    <input type="checkbox" v-model="f.enabled" />
+                    <input v-model="f.key" placeholder="Key" class="kv-key" @mouseenter="showVarHint($event, f.key)" @mouseleave="hideVarHint" />
+                    <select v-if="active.bodyType === 'formdata'" v-model="f.type" class="f-type">
+                      <option value="text">Text</option>
+                      <option value="file">File</option>
+                    </select>
+                    <input v-model="f.value" :placeholder="f.type === 'file' ? '/path/to/file' : 'Value'" class="kv-val" @mouseenter="showVarHint($event, f.value)" @mouseleave="hideVarHint" />
+                    <input
+                      v-if="active.bodyType === 'formdata'"
+                      v-model="f.contentType" class="ct-input"
+                      placeholder="(part C-T)"
+                      title="Per-part Content-Type (e.g. application/json)"
+                    />
+                    <button class="kv-del" @click="removeForm(i)">✕</button>
+                  </div>
+                  <button class="add" @click="addForm">+ Add field</button>
+                </template>
+
+                <textarea
+                  v-else
+                  v-model="bulkFormText"
+                  class="body-area"
+                  :placeholder="active.bodyType === 'formdata' ? 'key:value\nname:reqost\navatar:@/path/to/file.png\n#disabled:row' : 'key:value\nkey2:value2\n#disabled:row'"
+                  spellcheck="false"
+                  @blur="commitBulkForm"
+                />
+                <p v-if="bulkForm" class="hint">
+                  One field per line: <code>key:value</code>. Leading <code>#</code> disables.<span v-if="active.bodyType === 'formdata'"> Use <code>key:@/path</code> for a file part.</span>
+                </p>
               </div>
             </div>
 

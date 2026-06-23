@@ -4,7 +4,7 @@ import { useTabs, isDirty } from '../composables/useTabs'
 import { useEnv } from '../composables/useEnv'
 import { useDialog } from '../composables/useDialog'
 
-const { tabs, activeId, selectTab, closeTab, moveTab, pinTab, openAdhoc } = useTabs()
+const { tabs, activeId, selectTab, closeTab, moveTab, pinTab, openAdhoc, newRequest } = useTabs()
 const { environments, activeId: envActiveId, setActive, openModal } = useEnv()
 const dialog = useDialog()
 
@@ -104,9 +104,13 @@ function onBarDrop(e: DragEvent) {
   openAdhoc({ name, method: 'GET', url })
 }
 
-// Cmd+1 .. Cmd+9 → switch to nth tab (Postman/Insomnia parity).
+// Cmd+T → new request; Cmd+1 .. Cmd+9 → switch to nth tab (Postman parity).
 function onKey(e: KeyboardEvent) {
-  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+  if (!e.shiftKey && (e.key === 't' || e.key === 'T')) {
+    e.preventDefault(); newRequest(); return
+  }
+  if (e.shiftKey) return
   if (e.key < '1' || e.key > '9') return
   const idx = Number(e.key) - 1
   const t = tabs.value[idx]
@@ -144,6 +148,9 @@ const METHOD_COLORS: Record<string, string> = {
       <span v-if="isDirty(t)" class="dirty" title="Unsaved changes"></span>
       <button class="close" title="Close" @click.stop="maybeClose(t.id)">✕</button>
     </div>
+
+    <!-- new request -->
+    <button class="new-tab" title="New request (⌘T)" @click="newRequest()">+</button>
 
     <!-- context menu -->
     <template v-if="menu">
@@ -227,6 +234,12 @@ const METHOD_COLORS: Record<string, string> = {
   justify-content: center;
 }
 .close:hover { background: var(--border-strong); color: var(--text); }
+
+.new-tab {
+  flex-shrink: 0; width: 32px; font-size: 18px; line-height: 1; color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center;
+}
+.new-tab:hover { background: var(--bg-hover); color: var(--text); }
 
 .env { display: flex; align-items: center; gap: 4px; margin-left: auto; padding: 0 8px; flex-shrink: 0; }
 .env-select {

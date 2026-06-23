@@ -145,46 +145,50 @@ const state = reactive({
 })
 
 // ── G7: Persist open tabs across launches ─────────────────────────────────
-// Only the bits needed to re-open the tab go to disk; in-flight response
-// state, send errors, console logs etc. are recomputed on demand.
+// We persist each tab's FULL editable state (the same fields Save writes) plus
+// its `clean` baseline, so UNSAVED edits survive a restart — for both adhoc and
+// collection-backed tabs. In-flight response/error/log state is recomputed.
 const SESSION_KEY = 'reqost:tabs:v1'
-interface SerializedTab {
-  id: string
-  name: string
-  method: string
-  url: string
-  pinned?: boolean
-  // For adhoc tabs (id not from a collection node) the saved body/headers/
-  // auth round-trip too. For collection-backed tabs (`id` is a real node)
-  // these will be re-fetched by openRequest → load.
-  isAdhoc?: boolean
-  body?: string
-  bodyType?: BodyType
-  headers?: HeaderRow[]
-  auth?: Auth
+
+function serializeTab(t: ReqTab) {
+  return { detail: toDetail(t), pinned: t.pinned, clean: t.clean }
+}
+
+// hydrateTab rebuilds a tab from a serialized snapshot using the same parsers as
+// load() — but from disk, not the DB, so unsaved edits are preserved.
+function hydrateTab(s: any): ReqTab | null {
+  // `?? s` keeps the pre-v1.1 flat format (fields on the entry itself) openable
+  // on first launch after upgrade, rather than dropping the saved session.
+  const d = s?.detail ?? s
+  if (!d?.id) return null
+  const tab = blankTab(d.id, d.name || '', d.method || 'GET')
+  tab.url = d.url || ''
+  tab.params = parseQuery(tab.url)
+  tab.body = d.body || ''
+  tab.bodyType = (d.bodyType as BodyType) || (tab.body ? 'raw' : 'none')
+  tab.headers = parseHeaders(d.headers)
+  tab.formFields = parseForm(d.formFields)
+  tab.graphqlVars = d.graphqlVars || ''
+  tab.grpcMethod = d.grpcMethod || ''
+  tab.auth = parseAuth(d.auth)
+  tab.preScript = d.preScript || ''
+  tab.postScript = d.postScript || ''
+  tab.description = d.description || ''
+  tab.settings = parseSettings(d.settings)
+  tab.examples = parseExamples(d.examples)
+  tab.pinned = !!s.pinned
+  tab.loading = false
+  // Keep the saved baseline so a tab that was dirty at close stays dirty.
+  tab.clean = typeof s.clean === 'string' ? s.clean : snapshot(tab)
+  return tab
 }
 
 function saveSession() {
   try {
-    const payload = {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
       activeId: state.activeId,
-      tabs: state.tabs.map<SerializedTab>(t => {
-        const adhoc = t.id.startsWith('tab-') || t.id.length === 36 // random/uuid
-        const base: SerializedTab = {
-          id: t.id, name: t.name, method: t.method, url: t.url,
-          pinned: t.pinned || undefined,
-        }
-        if (adhoc) {
-          base.isAdhoc = true
-          base.body = t.body
-          base.bodyType = t.bodyType
-          base.headers = t.headers
-          base.auth = t.auth
-        }
-        return base
-      }),
-    }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(payload))
+      tabs: state.tabs.map(serializeTab),
+    }))
   } catch { /* localStorage full or disabled — silent */ }
 }
 
@@ -200,36 +204,22 @@ function restoreSession() {
   } catch { return }
   if (!payload?.tabs?.length) return
 
-  for (const s of payload.tabs as SerializedTab[]) {
-    if (s.isAdhoc) {
-      const tab = blankTab(s.id, s.name, s.method)
-      tab.url = s.url
-      tab.params = parseQuery(s.url)
-      tab.body = s.body ?? ''
-      tab.bodyType = s.bodyType ?? (tab.body ? 'raw' : 'none')
-      tab.headers = (s.headers ?? []).map(h => ({ ...h }))
-      if (s.auth) tab.auth = { ...s.auth }
-      tab.pinned = !!s.pinned
-      tab.loading = false
-      markClean(tab)
-      state.tabs.push(tab)
-    } else {
-      const tab = blankTab(s.id, s.name, s.method)
-      tab.pinned = !!s.pinned
-      state.tabs.push(tab)
-      void load(tab.id)
-    }
+  for (const s of payload.tabs) {
+    const tab = hydrateTab(s)
+    if (tab) state.tabs.push(tab)
   }
   state.activeId = payload.activeId && state.tabs.some(t => t.id === payload.activeId)
     ? payload.activeId
     : (state.tabs[0]?.id ?? '')
 }
 
-// Persist whenever tabs / active selection / pin state changes. `flush: post`
-// debounces multiple mutations in the same tick into one localStorage write.
+// Persist on any change to the open set, selection, pin state OR tab content.
+// The key folds each tab's full snapshot in so unsaved body/header/auth/script
+// edits are captured — not just url/name/method. `flush: post` coalesces a
+// burst of edits in one tick into a single write.
 watch(
-  () => state.tabs.map(t => `${t.id}|${t.pinned ? 1 : 0}|${t.name}|${t.method}|${t.url}`).join('§')
-    + '||' + state.activeId,
+  () => state.activeId + '||' +
+    state.tabs.map(t => `${t.id}|${t.pinned ? 1 : 0}|${snapshot(t)}`).join('§'),
   saveSession,
   { flush: 'post' },
 )
@@ -404,6 +394,16 @@ export function useTabs() {
     state.activeId = tab.id
   }
 
+  // newRequest opens a fresh, empty adhoc tab (the tab-bar "+" button). Not
+  // dirty until edited, so closing an untouched one doesn't prompt.
+  function newRequest() {
+    const tab = blankTab(genId(), 'Untitled Request', 'GET')
+    tab.loading = false
+    markClean(tab)
+    state.tabs.push(tab)
+    state.activeId = tab.id
+  }
+
   function selectTab(id: string) {
     state.activeId = id
   }
@@ -440,5 +440,5 @@ export function useTabs() {
     state.tabs.sort((a, b) => (a.pinned === b.pinned ? 0 : a.pinned ? -1 : 1))
   }
 
-  return { tabs, activeId, active, openRequest, openAdhoc, selectTab, closeTab, moveTab, pinTab }
+  return { tabs, activeId, active, openRequest, openAdhoc, newRequest, selectTab, closeTab, moveTab, pinTab }
 }

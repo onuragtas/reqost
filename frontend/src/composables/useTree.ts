@@ -17,7 +17,18 @@ export interface FlatNode {
 const flatList = shallowRef<FlatNode[]>([])
 const expandedIds = new Set<string>()
 
-function toFlat(n: { id: string; name: string; parentId: string; type: string; method: string; sortOrder: number; hasChildren: boolean }, depth: number): FlatNode {
+type RawNode = { id: string; name: string; parentId: string; type: string; method: string; sortOrder: number; hasChildren: boolean }
+
+// Display siblings alphabetically by name, folders before requests. Locale-aware
+// + case/diacritic-insensitive so "Şube" sorts naturally next to "Subе".
+function sortByName<T extends RawNode>(nodes: T[]): T[] {
+  return [...nodes].sort((a, b) => {
+    if ((a.type === 'folder') !== (b.type === 'folder')) return a.type === 'folder' ? -1 : 1
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+  })
+}
+
+function toFlat(n: RawNode, depth: number): FlatNode {
   return markRaw({ ...n, depth, isExpanded: false })
 }
 
@@ -25,7 +36,7 @@ export function useTree() {
   async function loadRoot() {
     const nodes = await GetRootItems()
     expandedIds.clear()
-    flatList.value = markRaw(nodes.map(n => toFlat(n, 0)))
+    flatList.value = markRaw(sortByName(nodes).map(n => toFlat(n, 0)))
   }
 
   async function toggleNode(node: FlatNode) {
@@ -50,7 +61,7 @@ export function useTree() {
       // Expand: fetch children and insert after this node
       expandedIds.add(node.id)
       const children = await GetChildren(node.id)
-      const childNodes = children.map(c => toFlat(c, node.depth + 1))
+      const childNodes = sortByName(children).map(c => toFlat(c, node.depth + 1))
 
       const list = flatList.value.slice()
       list[idx] = { ...node, isExpanded: true }
@@ -116,7 +127,7 @@ export function useTree() {
     // Re-fetch and insert; mark parent expanded + hasChildren.
     expandedIds.add(parentId)
     const children = await GetChildren(parentId)
-    const childNodes = children.map(c => toFlat(c, parent.depth + 1))
+    const childNodes = sortByName(children).map(c => toFlat(c, parent.depth + 1))
     list[idx] = markRaw({ ...parent, isExpanded: true, hasChildren: true })
     list.splice(idx + 1, 0, ...childNodes)
     flatList.value = markRaw(list)
