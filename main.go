@@ -39,6 +39,7 @@ func main() {
 	}
 
 	wsSvc := NewWSService()
+	tcpSvc := NewTCPService()
 	sseSvc := NewSSEService()
 	grpcSvc := NewGRPCService()
 	oauthSvc := NewOAuthService()
@@ -57,6 +58,7 @@ func main() {
 			application.NewService(execSvc),
 			application.NewService(envSvc),
 			application.NewService(wsSvc),
+			application.NewService(tcpSvc),
 			application.NewService(sseSvc),
 			application.NewService(grpcSvc),
 			application.NewService(oauthSvc),
@@ -79,6 +81,7 @@ func main() {
 	svc.setEnvSvc(envSvc)
 	envSvc.setDialog(app.Dialog)
 	wsSvc.setEmitter(app.Event)
+	tcpSvc.setEmitter(app.Event)
 	sseSvc.setEmitter(app.Event)
 	grpcSvc.setEmitter(app.Event)
 	oauthSvc.setApp(app)

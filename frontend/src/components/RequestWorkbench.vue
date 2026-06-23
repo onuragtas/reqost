@@ -23,6 +23,7 @@ import {
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
 import SseConsole from './SseConsole.vue'
+import TcpConsole from './TcpConsole.vue'
 import EditorPane from './EditorPane.vue'
 import JsonTree from './JsonTree.vue'
 import { useVarHint } from '../composables/useVarHint'
@@ -37,11 +38,12 @@ const { refreshNode } = useTree()
 const { settings: appSettings } = useSettings()
 
 // Switch protocol UI by URL scheme: ws/wss → WebSocket, grpc → gRPC, else HTTP.
-const mode = computed<'http' | 'ws' | 'grpc' | 'sse'>(() => {
+const mode = computed<'http' | 'ws' | 'grpc' | 'sse' | 'tcp'>(() => {
   const u = active.value?.url?.trim().toLowerCase() ?? ''
   if (u.startsWith('ws://') || u.startsWith('wss://')) return 'ws'
   if (u.startsWith('grpc://') || u.startsWith('grpcs://')) return 'grpc'
   if (u.startsWith('sse://') || u.startsWith('sses://')) return 'sse'
+  if (u.startsWith('tcp://') || u.startsWith('tls://') || u.startsWith('udp://')) return 'tcp'
   return 'http'
 })
 
@@ -1069,6 +1071,7 @@ function onSetVerifySSL(s: string) {
     <WsConsole v-else-if="mode === 'ws'" :tab="active" />
     <GrpcConsole v-else-if="mode === 'grpc'" :tab="active" />
     <SseConsole v-else-if="mode === 'sse'" :tab="active" />
+    <TcpConsole v-else-if="mode === 'tcp'" :tab="active" />
 
     <template v-else>
       <!-- request name -->

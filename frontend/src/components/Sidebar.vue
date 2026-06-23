@@ -174,6 +174,8 @@ function openHeaderMenu(e: MouseEvent) {
         { label: 'WebSocket', run: () => openAdhoc({ name: 'WebSocket', method: 'GET', url: 'wss://' }) },
         { label: 'gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
         { label: 'SSE Stream', run: () => openAdhoc({ name: 'SSE', method: 'GET', url: 'sses://api.example.com/stream' }) },
+        { label: 'TCP Socket', run: () => openAdhoc({ name: 'TCP', method: 'GET', url: 'tcp://localhost:6379' }) },
+        { label: 'UDP Socket', run: () => openAdhoc({ name: 'UDP', method: 'GET', url: 'udp://localhost:53' }) },
       ] },
       { separator: true },
       { label: 'Import', submenu: [

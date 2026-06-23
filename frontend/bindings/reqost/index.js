@@ -11,6 +11,7 @@ import * as GitService from "./gitservice.js";
 import * as OAuthService from "./oauthservice.js";
 import * as PluginService from "./pluginservice.js";
 import * as SSEService from "./sseservice.js";
+import * as TCPService from "./tcpservice.js";
 import * as UpdateService from "./updateservice.js";
 import * as WSService from "./wsservice.js";
 import * as WindowService from "./windowservice.js";
@@ -24,6 +25,7 @@ export {
     OAuthService,
     PluginService,
     SSEService,
+    TCPService,
     UpdateService,
     WSService,
     WindowService
