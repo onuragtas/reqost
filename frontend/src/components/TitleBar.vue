@@ -12,7 +12,7 @@ import { useGitDirty } from '../composables/useGitDirty'
 import { ToggleMaximise } from '../../bindings/reqost/windowservice'
 import GitModal from './GitModal.vue'
 
-const { version, updateInfo, applying, applied, checkError, autoCheck, install } = useUpdate()
+const { version, updateInfo, applying, applied, restarting, checkError, autoCheck, install } = useUpdate()
 const dialog = useDialog()
 
 const showPopover = ref(false)
@@ -174,12 +174,12 @@ function onBarDblClick(e: MouseEvent) {
           <div class="pop-meta">{{ version }} → {{ updateInfo.latest }}</div>
           <p v-if="checkError" class="pop-err">{{ checkError }}</p>
           <div class="pop-actions">
-            <button class="pop-btn primary" :disabled="applying" @click="onInstall">
-              {{ applying ? 'Installing…' : 'Install & relaunch' }}
+            <button class="pop-btn primary" :disabled="applying || restarting" @click="onInstall">
+              {{ restarting ? 'Restarting…' : applying ? 'Installing…' : 'Install & relaunch' }}
             </button>
-            <button class="pop-btn" @click="showPopover = false">Later</button>
+            <button v-if="!restarting" class="pop-btn" @click="showPopover = false">Later</button>
           </div>
-          <p class="pop-hint">Quit and reopen to apply after install.</p>
+          <p class="pop-hint">{{ restarting ? 'reqost will close and reopen automatically…' : 'Installs the new version, then relaunches automatically.' }}</p>
         </div>
       </div>
     </div>

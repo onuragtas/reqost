@@ -59,6 +59,19 @@ export function RepoSlug() {
     return $Call.ByID(3512118079);
 }
 
+/**
+ * RestartApp relaunches the (now-updated) app and exits the current process.
+ * 
+ * We spawn a small detached relauncher that waits for THIS pid to die, then
+ * launches a fresh instance — so there's never two instances overlapping and
+ * the new binary (already swapped in by ApplyUpdate) is the one that starts.
+ * The current process is exited shortly after, letting the JS call return first.
+ * @returns {$CancellablePromise<void>}
+ */
+export function RestartApp() {
+    return $Call.ByID(2441291342);
+}
+
 // Private type creation functions
 const $$createType0 = update$0.Info.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);

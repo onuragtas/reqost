@@ -11,7 +11,7 @@ import { Events } from '@wailsio/runtime'
 const { pref, fontSize, setPref, setFontSize } = useTheme()
 const showShortcuts = ref(false)
 const { settings, reset } = useSettings()
-const { version, updateInfo, applying, applied, checkError, install } = useUpdate()
+const { version, updateInfo, applied, checking, upToDate, checkError, check } = useUpdate()
 
 const repoSlug = ref<string>('')
 const showNotes = ref(false)
@@ -141,7 +141,12 @@ function openReleases() {
       <h4>Updates</h4>
       <div class="row">
         <label>Current version</label>
-        <code class="ver">{{ version }}</code>
+        <div class="ver-row">
+          <code class="ver">{{ version }}</code>
+          <button class="pill" :disabled="checking" @click="check">
+            {{ checking ? 'Checking…' : 'Check for updates' }}
+          </button>
+        </div>
       </div>
       <div class="row" v-if="repoSlug">
         <label>Source</label>
@@ -156,8 +161,9 @@ function openReleases() {
           <pre v-if="showNotes" class="notes selectable">{{ updateInfo.notes }}</pre>
         </div>
       </template>
-      <p v-else-if="applied" class="hint">Installed — quit and reopen reqost to use it.</p>
-      <p v-else class="hint">Updates are checked automatically on startup.</p>
+      <p v-else-if="applied" class="hint">Installed — reqost is relaunching into the new version…</p>
+      <p v-else-if="upToDate" class="hint upd-ok">✓ You're on the latest version.</p>
+      <p v-else class="hint">Checked automatically on startup. Use “Check for updates” to check now.</p>
       <p v-if="checkError" class="err">⚠ {{ checkError }}</p>
     </section>
 
@@ -367,12 +373,15 @@ kbd {
 }
 .ghost:hover { color: var(--danger); border-color: var(--danger); }
 .ver { font: 11px monospace; color: var(--text); background: var(--bg-input); padding: 2px 6px; border-radius: 4px; }
+.ver-row { display: flex; align-items: center; gap: 8px; }
+.pill:disabled { opacity: 0.6; cursor: default; }
 .pill.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
 .pill.primary:hover:not(:disabled) { filter: brightness(1.1); }
 .pill.install { background: var(--ok); color: #06140d; }
 .pill:disabled { opacity: 0.55; cursor: default; }
 .err { font-size: 11px; color: var(--danger); line-height: 1.4; word-break: break-word; }
 .upd-avail { color: var(--ok); }
+.upd-ok { color: var(--text-dim); }
 .notes-wrap { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
 .link { align-self: flex-start; color: var(--accent); font-size: 11px; background: transparent; padding: 0; }
 .link:hover { text-decoration: underline; }
