@@ -122,6 +122,7 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Enter') { e.preventDefault(); send() }
   else if (e.key === 's') { e.preventDefault(); save() }
   else if (e.key === 'w') { e.preventDefault(); maybeCloseActive() }
+  else if ((e.key === 'f' || e.key === 'F') && e.shiftKey) { e.preventDefault(); beautifyBody() }
 }
 
 async function sendAndSave() {
@@ -541,6 +542,54 @@ function decodeB64Body() {
   }
 }
 function resetDecode() { decodedBody.value = null }
+
+// ── Beautify helpers ───────────────────────────────────────────────────────
+function beautifyJSON(s: string): string {
+  try { return JSON.stringify(JSON.parse(s), null, 2) } catch { return s }
+}
+
+function beautifyXML(s: string): string {
+  // Walk tokens — split on tag boundaries, track indent.
+  const INDENT = '  '
+  const tokens = s.trim().replace(/>\s+</g, '><').split(/(?<=>)(?=<)/)
+  let depth = 0
+  return tokens.map(tok => {
+    if (tok.startsWith('</'))          return INDENT.repeat(--depth) + tok
+    if (tok.startsWith('<?') || tok.startsWith('<!')) return INDENT.repeat(depth) + tok
+    const selfClose = tok.endsWith('/>')
+    const line = INDENT.repeat(depth) + tok
+    if (!selfClose && !tok.startsWith('</')) depth++
+    if (selfClose) depth = Math.max(0, depth)  // already didn't increment
+    return line
+  }).join('\n')
+}
+
+function beautifyBody() {
+  const t = active.value
+  if (!t) return
+  const bt = t.bodyType
+  if (bt === 'json') { t.body = beautifyJSON(t.body); return }
+  if (bt === 'xml' || bt === 'html') { t.body = beautifyXML(t.body); return }
+  // graphql: pretty-print the variables JSON pane
+  if (bt === 'graphql') t.graphqlVars = beautifyJSON(t.graphqlVars)
+}
+
+const canBeautifyBody = computed(() => {
+  const bt = active.value?.bodyType ?? ''
+  return ['json', 'xml', 'html', 'graphql'].includes(bt) && !!active.value?.body?.trim()
+})
+
+// Beautify the response body in the current view (writes into decodedBody so
+// the original raw body is never mutated, and the button acts as a toggle).
+function beautifyResponseBody() {
+  const body = decodedBody.value ?? active.value?.response?.body ?? ''
+  const ct = responseContentType.value
+  if (ct.includes('xml') || ct.includes('html') || ct.includes('svg')) {
+    decodedBody.value = beautifyXML(body)
+  } else {
+    decodedBody.value = beautifyJSON(body)
+  }
+}
 
 function fmtSize(n: number) {
   if (n < 1024) return `${n} B`
@@ -1235,6 +1284,12 @@ function onSetVerifySSL(s: string) {
                 <select v-model="active.bodyType">
                   <option v-for="bt in BODY_TYPES" :key="bt.id" :value="bt.id">{{ bt.label }}</option>
                 </select>
+                <button
+                  v-if="canBeautifyBody"
+                  class="beautify-btn"
+                  title="Format / Beautify (Ctrl+Shift+F)"
+                  @click="beautifyBody"
+                >⎆ Format</button>
               </div>
               <div v-if="active.bodyType === 'none'" class="soon"><span>This request has no body</span></div>
               <EditorPane
@@ -1557,6 +1612,10 @@ function onSetVerifySSL(s: string) {
                 >Preview</button>
 
                 <div class="bv-sep"></div>
+                <button class="bv-btn" title="Beautify / Format JSON or XML"
+                  @click="beautifyResponseBody">
+                  ⎆ Format
+                </button>
                 <button class="bv-btn" :title="decodedBody ? 'Hide decoded' : 'Decode body as base64'"
                   @click="decodedBody ? resetDecode() : decodeB64Body()">
                   {{ decodedBody ? '↺ Original' : '🔓 Base64' }}
@@ -1900,7 +1959,10 @@ function onSetVerifySSL(s: string) {
 .add { align-self: flex-start; border: 1px dashed var(--border-strong); border-radius: 4px; color: var(--text-dim); font-size: 12px; padding: 5px 10px; margin-top: 4px; }
 .body-area { width: 100%; min-height: 120px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font: 12px/1.5 monospace; padding: 10px; resize: vertical; }
 .body { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+.body-type { display: flex; align-items: center; gap: 8px; }
 .body-type select { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; font-size: 12px; padding: 5px 8px; }
+.beautify-btn { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); font-size: 11px; padding: 4px 9px; }
+.beautify-btn:hover { color: var(--accent); border-color: var(--accent); }
 .f-type { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font-size: 11px; padding: 5px; }
 .ct-input { background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; font: 11px monospace; padding: 5px 6px; width: 140px; color: var(--text-dim); }
 .ct-input:focus { outline: none; border-color: var(--accent); }

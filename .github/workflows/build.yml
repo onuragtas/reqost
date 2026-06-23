@@ -227,19 +227,58 @@ jobs:
             -ldflags "-s -w $extra_ldflags -X reqost/internal/update.Version=${{ steps.ver.outputs.version }} -X reqost/internal/update.RepoSlug=${{ env.REPO_SLUG }}" \
             -o "$out" .
 
-      - name: Package (unix)
-        if: matrix.platform != 'windows'
+      - name: Package (linux)
+        if: matrix.platform == 'linux'
         shell: bash
         run: |
           cd dist
-          name="reqost-${{ matrix.platform }}-${{ matrix.arch }}"
+          name="reqost-linux-${{ matrix.arch }}"
           tar czf "${name}.tar.gz" reqost
-          if [[ "${{ matrix.platform }}" == "darwin" ]]; then
-            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
-          else
-            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
-          fi
+          sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
           rm reqost
+
+      - name: Package macOS .app + DMG
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="reqost-darwin-${{ matrix.arch }}"
+          ver="${{ steps.ver.outputs.version }}"
+
+          # ── tar.gz for the in-app updater (update service looks for this name) ──
+          cd dist
+          tar czf "${name}.tar.gz" reqost
+          shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          cd ..
+
+          # ── .app bundle ──────────────────────────────────────────────────────
+          APP="dist/reqost.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp build/darwin/icons.icns "$APP/Contents/Resources/"
+          [ -f build/darwin/Assets.car ] && cp build/darwin/Assets.car "$APP/Contents/Resources/" || true
+          cp dist/reqost "$APP/Contents/MacOS/reqost"
+          # Inject version into Info.plist
+          sed "s/{{VERSION}}/$ver/g" build/darwin/Info.plist > "$APP/Contents/Info.plist" 2>/dev/null || \
+            cp build/darwin/Info.plist "$APP/Contents/Info.plist"
+          # Ad-hoc sign (no Developer ID needed)
+          codesign --force --deep --sign - "$APP"
+
+          # ── .app.zip (for users who prefer to drag-drop without DMG) ────────
+          cd dist
+          zip -qr "${name}.app.zip" reqost.app
+          shasum -a 256 "${name}.app.zip" > "${name}.app.zip.sha256"
+          cd ..
+
+          # ── DMG ──────────────────────────────────────────────────────────────
+          mkdir -p dist/dmg-staging
+          cp -r dist/reqost.app dist/dmg-staging/
+          ln -sf /Applications dist/dmg-staging/Applications
+          hdiutil create -volname "reqost $ver" \
+            -srcfolder dist/dmg-staging \
+            -ov -format UDZO \
+            "dist/${name}.dmg"
+          shasum -a 256 "dist/${name}.dmg" > "dist/${name}.dmg.sha256"
+          rm -rf dist/dmg-staging dist/reqost.app dist/reqost
 
       - name: Package (windows)
         if: matrix.platform == 'windows'
@@ -285,6 +324,8 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.dmg
+            dist/*.app.zip
             dist/*.sha256
           generate_release_notes: true
           draft: false
