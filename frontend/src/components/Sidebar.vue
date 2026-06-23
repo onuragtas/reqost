@@ -126,9 +126,17 @@ const dialog = useDialog()
 const { syncEnvironments } = useEnv()
 
 // ── Context / header menu ──────────────────────────────────────────────────
-interface MenuItem { label: string; danger?: boolean; run: () => void }
+interface MenuItem {
+  label?: string
+  danger?: boolean
+  run?: () => void
+  submenu?: MenuItem[]   // flyout group
+  separator?: boolean    // visual divider
+  shortcut?: string      // e.g. '⌘T'
+}
 const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null)
-function closeMenu() { menu.value = null }
+const openSub = ref(-1)  // index of the hovered submenu, -1 = none
+function closeMenu() { menu.value = null; openSub.value = -1 }
 
 function openNodeMenu(e: MouseEvent, node: FlatNode) {
   const items: MenuItem[] = []
@@ -156,25 +164,35 @@ function openNodeMenu(e: MouseEvent, node: FlatNode) {
   menu.value = { x: e.clientX, y: e.clientY, items }
 }
 function openHeaderMenu(e: MouseEvent) {
+  openSub.value = -1
   menu.value = {
     x: e.clientX, y: e.clientY,
     items: [
-      { label: 'New Request', run: () => createUnder('', 'request') },
+      { label: 'New Request', run: () => createUnder('', 'request'), shortcut: '⌘T' },
       { label: 'New Folder', run: () => createUnder('', 'folder') },
-      { label: 'New WebSocket', run: () => openAdhoc({ name: 'WebSocket', method: 'GET', url: 'wss://' }) },
-      { label: 'New gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
-      { label: 'New SSE Stream', run: () => openAdhoc({ name: 'SSE', method: 'GET', url: 'sses://api.example.com/stream' }) },
-      { label: 'Paste cURL…', run: onPasteCurl },
+      { label: 'New', submenu: [
+        { label: 'WebSocket', run: () => openAdhoc({ name: 'WebSocket', method: 'GET', url: 'wss://' }) },
+        { label: 'gRPC Request', run: () => openAdhoc({ name: 'gRPC', method: 'POST', url: 'grpc://localhost:50051', body: '{}' }) },
+        { label: 'SSE Stream', run: () => openAdhoc({ name: 'SSE', method: 'GET', url: 'sses://api.example.com/stream' }) },
+      ] },
+      { separator: true },
+      { label: 'Import', submenu: [
+        { label: 'Collection…', run: onImport },
+        { label: 'Environment…', run: onImportEnv },
+        { label: 'OpenAPI / Swagger…', run: onImportOpenAPI },
+        { label: 'HAR (paste)…', run: onImportHAR },
+        { label: 'From URL…', run: onImportFromURL },
+        { label: 'All from Postman…', run: onImportAllFromPostman },
+        { label: 'Workspace (.zip)…', run: onImportWorkspaceZip },
+      ] },
+      { label: 'Export', submenu: [
+        { label: 'Collection…', run: onExport },
+        { label: 'Workspace (.zip)…', run: onExportWorkspaceZip },
+      ] },
+      { separator: true },
       { label: 'Run Collection', run: () => runColl('') },
-      { label: 'Import all from Postman…', run: onImportAllFromPostman },
-      { label: 'Import Collection…', run: onImport },
-      { label: 'Import Environment…', run: onImportEnv },
-      { label: 'Import OpenAPI…', run: onImportOpenAPI },
-      { label: 'Import HAR (paste)…', run: onImportHAR },
-      { label: 'Import from URL…', run: onImportFromURL },
-      { label: 'Export Collection…', run: onExport },
-      { label: 'Export Workspace (.zip)…', run: onExportWorkspaceZip },
-      { label: 'Import Workspace (.zip)…', run: onImportWorkspaceZip },
+      { label: 'Paste cURL…', run: onPasteCurl },
+      { separator: true },
       { label: 'Delete All', run: onClearAll, danger: true },
     ],
   }
@@ -481,7 +499,10 @@ const METHOD_COLORS: Record<string, string> = {
         placeholder="Search requests..."
         @input="onSearchInput"
       />
-      <button class="import-btn" title="New / Import / Export" @click="openHeaderMenu">+</button>
+      <div class="new-split">
+        <button class="import-btn split-main" title="New request (⌘T)" @click="createUnder('', 'request')">+</button>
+        <button class="import-btn split-caret" title="New / Import / Export" @click="openHeaderMenu">▾</button>
+      </div>
     </div>
 
     <div class="filter-bar">
@@ -565,11 +586,35 @@ const METHOD_COLORS: Record<string, string> = {
     <template v-if="menu">
       <div class="menu-overlay" @click="closeMenu" @contextmenu.prevent="closeMenu"></div>
       <div class="menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }">
-        <button
-          v-for="(it, i) in menu.items" :key="i"
-          class="menu-item" :class="{ danger: it.danger }"
-          @click="it.run(); closeMenu()"
-        >{{ it.label }}</button>
+        <template v-for="(it, i) in menu.items" :key="i">
+          <div v-if="it.separator" class="menu-sep"></div>
+
+          <div
+            v-else-if="it.submenu"
+            class="menu-item has-sub" :class="{ open: openSub === i }"
+            @mouseenter="openSub = i"
+            @mouseleave="openSub = -1"
+          >
+            <span class="mi-label">{{ it.label }}</span>
+            <span class="mi-caret">▸</span>
+            <div v-if="openSub === i" class="menu submenu">
+              <button
+                v-for="(s, j) in it.submenu" :key="j"
+                class="menu-item" :class="{ danger: s.danger }"
+                @click="s.run && s.run(); closeMenu()"
+              >{{ s.label }}</button>
+            </div>
+          </div>
+
+          <button
+            v-else
+            class="menu-item" :class="{ danger: it.danger }"
+            @click="it.run && it.run(); closeMenu()"
+          >
+            <span class="mi-label">{{ it.label }}</span>
+            <span v-if="it.shortcut" class="mi-sc">{{ it.shortcut }}</span>
+          </button>
+        </template>
       </div>
     </template>
   </div>
@@ -603,16 +648,17 @@ const METHOD_COLORS: Record<string, string> = {
 }
 .search:focus { border-color: var(--accent); }
 
+.new-split { display: flex; flex-shrink: 0; }
 .import-btn {
   background: var(--bg-input);
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
   color: var(--text-dim);
-  font-size: 18px;
   line-height: 1;
-  padding: 2px 9px;
 }
 .import-btn:hover { background: var(--bg-hover); color: var(--text); }
+.split-main { font-size: 18px; padding: 2px 9px; border-radius: 4px 0 0 4px; }
+.split-caret { font-size: 10px; padding: 2px 5px; border-left: none; border-radius: 0 4px 4px 0; }
+.split-caret:hover, .split-main:hover { z-index: 1; }
 
 .filter-bar {
   display: flex; gap: 4px; padding: 0 8px 6px; flex-wrap: wrap;
@@ -740,7 +786,20 @@ const METHOD_COLORS: Record<string, string> = {
   border-radius: 8px; padding: 4px; box-shadow: 0 10px 30px var(--shadow, rgba(0,0,0,0.4));
   display: flex; flex-direction: column;
 }
-.menu-item { text-align: left; font-size: 12px; color: var(--text); padding: 7px 10px; border-radius: 5px; }
-.menu-item:hover { background: var(--bg-hover); }
+.menu-item {
+  text-align: left; font-size: 12px; color: var(--text); padding: 7px 10px; border-radius: 5px;
+  display: flex; align-items: center; gap: 12px; position: relative; white-space: nowrap;
+}
+.menu-item:hover, .menu-item.has-sub.open { background: var(--bg-hover); }
 .menu-item.danger { color: var(--danger); }
+.mi-label { flex: 1; }
+.mi-sc { color: var(--text-faint); font-size: 11px; }
+.mi-caret { color: var(--text-faint); font-size: 10px; }
+.menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.submenu {
+  /* Flush (slight overlap) against the parent item so the cursor never crosses
+     a dead gap that would fire mouseleave and close the flyout. */
+  position: absolute; left: 100%; top: -5px; margin-left: -2px;
+  padding-left: 6px; z-index: 202;
+}
 </style>
