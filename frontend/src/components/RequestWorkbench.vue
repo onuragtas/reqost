@@ -315,6 +315,30 @@ function commitBulkForm() {
   active.value.formFields = bulkToForm(bulkFormText.value, active.value.bodyType === 'formdata')
 }
 
+function onBulkFormPaste(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text/plain')
+  if (!text) return
+  const trimmed = text.trim()
+  // Convert URL-encoded query string (key=val&key2=val2) → key:value lines
+  if (!trimmed.includes('&') || !trimmed.includes('=') || trimmed.includes('\n')) return
+  e.preventDefault()
+  try {
+    const lines = trimmed.split('&').map(pair => {
+      const eq = pair.indexOf('=')
+      if (eq < 0) return decodeURIComponent(pair.replace(/\+/g, ' ')) + ':'
+      const key = decodeURIComponent(pair.slice(0, eq).replace(/\+/g, ' '))
+      const val = decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, ' '))
+      return `${key}:${val}`
+    }).join('\n')
+    bulkFormText.value = bulkFormText.value ? bulkFormText.value.trimEnd() + '\n' + lines : lines
+  } catch {
+    const ta = e.target as HTMLTextAreaElement
+    const s = ta.selectionStart ?? bulkFormText.value.length
+    const end = ta.selectionEnd ?? s
+    bulkFormText.value = bulkFormText.value.slice(0, s) + trimmed + bulkFormText.value.slice(end)
+  }
+}
+
 // Switching tabs while a bulk editor is open would otherwise leave the textarea
 // bound to the previous tab's text, so a blur-commit could write it onto the
 // new tab. Re-sync from the now-active tab whenever the active id changes.
@@ -1366,6 +1390,7 @@ function onSetVerifySSL(s: string) {
                   :placeholder="active.bodyType === 'formdata' ? 'key:value\nname:reqost\navatar:@/path/to/file.png\n#disabled:row' : 'key:value\nkey2:value2\n#disabled:row'"
                   spellcheck="false"
                   @blur="commitBulkForm"
+                  @paste="onBulkFormPaste"
                 />
                 <p v-if="bulkForm" class="hint">
                   One field per line: <code>key:value</code>. Leading <code>#</code> disables.<span v-if="active.bodyType === 'formdata'"> Use <code>key:@/path</code> for a file part.</span>

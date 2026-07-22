@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { EditorState, Compartment, RangeSetBuilder } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, type DecorationSet, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import {
-  defaultHighlightStyle, syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap,
+  classHighlighter, syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from '@codemirror/language'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search'
@@ -126,7 +126,7 @@ onMounted(() => {
       // explicit so an upstream change can't flip them on us.
       search({ top: true, caseSensitive: false, regexp: false, wholeWord: false }),
       highlightSelectionMatches(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      syntaxHighlighting(classHighlighter),
       keymap.of([
         // Mod-Enter (Cmd+Enter on Mac, Ctrl+Enter on Win/Linux): mark as handled
         // so CodeMirror calls e.preventDefault() and doesn't insert a newline.
@@ -314,16 +314,23 @@ watch(() => props.vars, (v) => {
 .editor-pane :deep(.cm-editor.cm-focused) { outline: none; }
 .editor-pane:focus-within { border-color: var(--accent); }
 .editor-pane :deep(.cm-line) { color: var(--text); }
-.editor-pane :deep(.tok-keyword)  { color: var(--tok-keyword); }
-.editor-pane :deep(.tok-string)   { color: var(--tok-string); }
-.editor-pane :deep(.tok-number)   { color: var(--tok-number); }
-.editor-pane :deep(.tok-property) { color: var(--tok-property); }
-.editor-pane :deep(.tok-operator) { color: var(--tok-operator); }
-.editor-pane :deep(.tok-comment)  { color: var(--tok-comment); font-style: italic; }
-.editor-pane :deep(.tok-typeName) { color: var(--tok-builtin); }
-.editor-pane :deep(.tok-tagName)  { color: var(--tok-tag); }
-.editor-pane :deep(.tok-attributeName) { color: var(--tok-attr); }
+/* classHighlighter generates these class names — they only work with syntaxHighlighting(classHighlighter) */
+.editor-pane :deep(.tok-keyword)      { color: var(--tok-keyword); font-weight: 600; }
+.editor-pane :deep(.tok-string)       { color: var(--tok-string); }
+.editor-pane :deep(.tok-number)       { color: var(--tok-number); }
+.editor-pane :deep(.tok-bool)         { color: var(--tok-keyword); }
+.editor-pane :deep(.tok-null)         { color: var(--tok-comment); }
+.editor-pane :deep(.tok-propertyName) { color: var(--tok-property); }
+.editor-pane :deep(.tok-operator)     { color: var(--tok-operator); }
+.editor-pane :deep(.tok-comment),
+.editor-pane :deep(.tok-lineComment),
+.editor-pane :deep(.tok-blockComment) { color: var(--tok-comment); font-style: italic; }
+.editor-pane :deep(.tok-typeName)     { color: var(--tok-builtin); }
+.editor-pane :deep(.tok-tagName)      { color: var(--tok-tag); }
+.editor-pane :deep(.tok-attributeName)  { color: var(--tok-attr); }
 .editor-pane :deep(.tok-attributeValue) { color: var(--tok-string); }
+.editor-pane :deep(.tok-variableName)   { color: var(--tok-property); }
+.editor-pane :deep(.tok-punctuation)    { color: var(--text-dim); }
 .editor-pane :deep(.cm-var) {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, transparent);

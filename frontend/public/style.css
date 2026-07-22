@@ -29,14 +29,14 @@
 
     /* Syntax highlighting — dark theme */
     --tok-keyword:   #c678dd;
-    --tok-string:    #56b6c2;
+    --tok-string:    #ffe08a;
     --tok-number:    #d19a66;
-    --tok-property:  #61afef;
-    --tok-operator:  #56b6c2;
+    --tok-property:  #abb2bf;
+    --tok-operator:  #abb2bf;
     --tok-comment:   #5c6370;
     --tok-builtin:   #e5c07b;
-    --tok-tag:       #61afef;
-    --tok-attr:      #d19a66;
+    --tok-tag:       #d19a66;
+    --tok-attr:      #abb2bf;
 }
 
 :root[data-theme="light"] {
@@ -60,14 +60,14 @@
 
     /* Syntax highlighting — light theme */
     --tok-keyword:   #a626a4;
-    --tok-string:    #0184bc;
+    --tok-string:    #a626a4;
     --tok-number:    #986801;
-    --tok-property:  #4078f2;
-    --tok-operator:  #0184bc;
+    --tok-property:  #24292f;
+    --tok-operator:  #6b6b73;
     --tok-comment:   #a0a1a7;
     --tok-builtin:   #c18401;
-    --tok-tag:       #4078f2;
-    --tok-attr:      #986801;
+    --tok-tag:       #986801;
+    --tok-attr:      #6b6b73;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
