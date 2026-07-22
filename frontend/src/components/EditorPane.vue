@@ -3,8 +3,9 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { EditorState, Compartment, RangeSetBuilder } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, Decoration, type DecorationSet, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import {
-  classHighlighter, syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap,
+  syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from '@codemirror/language'
+import { classHighlighter } from '@lezer/highlight'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search'
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, type CompletionContext } from '@codemirror/autocomplete'
