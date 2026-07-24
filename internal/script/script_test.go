@@ -128,3 +128,22 @@ func TestRunPreMutatesRequestAndEnv(t *testing.T) {
 		t.Errorf("header not added: %+v", res.Request.Headers)
 	}
 }
+
+func TestLegacyPostmanGlobals(t *testing.T) {
+	src := `
+		postman.setGlobalVariable("user-id", "svc");
+		postman.setEnvironmentVariable("auth-hash", "abc");
+		if (postman.getGlobalVariable("user-id") !== "svc") throw new Error("get failed");
+		postman.clearGlobalVariable("stale");
+	`
+	res := RunPre(src, map[string]string{"stale": "x"}, ScriptRequest{Method: "GET", URL: "https://x/y"}, nil, Info{})
+	if res.Error != "" {
+		t.Fatalf("error: %s", res.Error)
+	}
+	if res.Vars["user-id"] != "svc" || res.Vars["auth-hash"] != "abc" {
+		t.Errorf("legacy vars not set: %v", res.Vars)
+	}
+	if _, ok := res.Vars["stale"]; ok {
+		t.Errorf("clearGlobalVariable did not unset: %v", res.Vars)
+	}
+}

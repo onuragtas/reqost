@@ -163,6 +163,21 @@ if (typeof __response !== 'undefined' && __response) {
 if (typeof __request !== 'undefined' && __request) {
   pm.request = __request;
 }
+
+// Legacy Postman API: the old scripts use a global "postman" object instead of
+// pm.*. Globals and environment variables both resolve to the same active
+// variable map here (pm.globals aliases pm.environment), so we route all of
+// these through the same host hooks.
+var postman = {
+  setGlobalVariable:        function(k,v){ __host.setEnv(String(k), String(v)); },
+  getGlobalVariable:        function(k){ return __host.getEnv(String(k)); },
+  clearGlobalVariable:      function(k){ __host.unsetEnv(String(k)); },
+  setEnvironmentVariable:   function(k,v){ __host.setEnv(String(k), String(v)); },
+  getEnvironmentVariable:   function(k){ return __host.getEnv(String(k)); },
+  clearEnvironmentVariable: function(k){ __host.unsetEnv(String(k)); },
+  getResponseHeader:        function(name){ return __headerIndex[String(name).toLowerCase()]; }
+};
+
 var tests = {};
 `
 
