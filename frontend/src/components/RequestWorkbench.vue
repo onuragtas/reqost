@@ -14,10 +14,10 @@ import { TryPreScript, TryTestScript } from '../../bindings/reqost/execservice'
 import { statusPhrase, statusHint } from '../composables/httpStatus'
 import { useDialog } from '../composables/useDialog'
 import { parseQuery, buildUrl, baseOf } from '../composables/url'
-import { parseCurl, toCurl } from '../composables/curl'
+import { parseCurl } from '../composables/curl'
 import { recordReqHistory, loadReqHistory, type ReqHistoryEntry } from '../composables/useRequestHistory'
 import {
-  generatePython, generateJS, generateGo, generateJava, generateCSharp, generatePowerShell, generateHTTP,
+  generateCurl, generatePython, generateJS, generateGo, generateJava, generateCSharp, generatePowerShell, generateHTTP,
   CODE_LANGS, type CodeLang,
 } from '../composables/useCodeGen'
 import WsConsole from './WsConsole.vue'
@@ -198,9 +198,9 @@ const codeLang = ref<CodeLang>('python')
 const generatedCode = computed(() => {
   const t = active.value
   if (!t) return ''
-  const input = { method: t.method, url: t.url, headers: t.headers, body: t.body, bodyType: t.bodyType, auth: t.auth }
+  const input = { method: t.method, url: t.url, headers: t.headers, body: t.body, bodyType: t.bodyType, auth: t.auth, formFields: t.formFields }
   switch (codeLang.value) {
-    case 'curl':       return toCurl(t.method, t.url, t.headers, t.body)
+    case 'curl':       return generateCurl(input)
     case 'python':     return generatePython(input)
     case 'javascript': return generateJS(input)
     case 'go':         return generateGo(input)

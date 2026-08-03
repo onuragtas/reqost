@@ -15,7 +15,8 @@ import { useRunner } from '../composables/useRunner'
 import { useDialog } from '../composables/useDialog'
 import { useEnv } from '../composables/useEnv'
 import { useFavorites } from '../composables/useFavorites'
-import { toCurl, parseCurl } from '../composables/curl'
+import { parseCurl } from '../composables/curl'
+import { generateCurl } from '../composables/useCodeGen'
 
 const { flatList, loadRoot, toggleNode, searchNodes, refreshNode, removeNode, reloadChildren } = useTree()
 const { isFav, toggle: toggleFav } = useFavorites()
@@ -264,9 +265,16 @@ async function copyText(s: string) {
 async function copyCurl(node: FlatNode) {
   const d: any = await GetRequestDetail(node.id)
   if (!d) return
-  let headers: any[] = []
-  try { headers = JSON.parse(d.headers || '[]') } catch { /* ignore */ }
-  const curl = toCurl(d.method, d.url, headers, d.body)
+  const jparse = (s: string, fallback: any) => { try { return JSON.parse(s) } catch { return fallback } }
+  const curl = generateCurl({
+    method: d.method,
+    url: d.url,
+    headers: jparse(d.headers, []),
+    body: d.body || '',
+    bodyType: d.bodyType || (d.body ? 'raw' : 'none'),
+    auth: jparse(d.auth, { type: 'none' }),
+    formFields: jparse(d.formFields, []),
+  })
   try {
     await navigator.clipboard.writeText(curl)
     statusMsg.value = 'cURL copied'

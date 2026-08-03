@@ -1,4 +1,4 @@
-import type { HeaderRow, Auth, BodyType } from './useTabs'
+import type { HeaderRow, Auth, BodyType, FormRow } from './useTabs'
 
 export type CodeLang =
   | 'curl' | 'python' | 'javascript' | 'go'
@@ -22,6 +22,7 @@ export interface CodeGenInput {
   body: string
   bodyType: BodyType
   auth: Auth
+  formFields?: FormRow[]
 }
 
 function activeHeaders(headers: HeaderRow[]): HeaderRow[] {
@@ -29,21 +30,92 @@ function activeHeaders(headers: HeaderRow[]): HeaderRow[] {
 }
 
 function authHeader(auth: Auth): { key: string; value: string } | null {
+  if (!auth) return null
   if (auth.type === 'bearer') return { key: 'Authorization', value: `Bearer ${auth.token}` }
   if (auth.type === 'basic')  return { key: 'Authorization', value: `Basic ${btoa(`${auth.username}:${auth.password}`)}` }
   if (auth.type === 'apikey' && auth.key) return { key: auth.key, value: auth.value }
   return null
 }
 
+// contentTypeFor mirrors what the Go send path (internal/httpclient/body.go)
+// applies for each body mode, so generated snippets carry the same Content-Type
+// the app itself would send. formdata is intentionally omitted — its boundary
+// is generated per-request (curl -F / multipart libs set it themselves).
+export function contentTypeFor(bodyType: BodyType): string {
+  switch (bodyType) {
+    case 'json':       return 'application/json'
+    case 'urlencoded': return 'application/x-www-form-urlencoded'
+    case 'graphql':    return 'application/json'
+    case 'xml':        return 'application/xml'
+    case 'html':       return 'text/html'
+    case 'javascript': return 'application/javascript'
+    case 'text':       return 'text/plain'
+    case 'binary':     return 'application/octet-stream'
+    default:           return '' // raw / none / formdata → caller decides
+  }
+}
+
+function hasHeader(headers: { key: string }[], name: string): boolean {
+  return headers.some(h => h.key.toLowerCase() === name.toLowerCase())
+}
+
+// allHeaders resolves the full header set a snippet should emit: the user's
+// enabled headers, the auth header, and — like the real send — an auto
+// Content-Type derived from the body mode unless one is already present.
 function allHeaders(input: CodeGenInput): { key: string; value: string }[] {
   const h = activeHeaders(input.headers).map(r => ({ key: r.key, value: r.value }))
   const a = authHeader(input.auth)
   if (a) h.push(a)
+  if (bodyIsPresent(input)) {
+    const ct = contentTypeFor(input.bodyType)
+    if (ct && !hasHeader(h, 'content-type')) h.push({ key: 'Content-Type', value: ct })
+  }
   return h
+}
+
+// bodyIsPresent reports whether the request actually carries a body worth
+// emitting (form modes count even when the raw `body` string is empty).
+function bodyIsPresent(input: CodeGenInput): boolean {
+  if (input.method === 'GET' || input.method === 'HEAD') return false
+  if (input.bodyType === 'formdata' || input.bodyType === 'urlencoded') {
+    return (input.formFields ?? []).some(f => f.enabled !== false && f.key.trim())
+  }
+  return !!input.body
 }
 
 function hasBody(input: CodeGenInput) {
   return input.body && input.method !== 'GET' && input.method !== 'HEAD'
+}
+
+// ── cURL ────────────────────────────────────────────────────────────────────
+// Full-fidelity cURL: method, all headers (incl. auth + auto Content-Type),
+// and a body matching the mode — -F for multipart, --data-urlencode for form
+// fields, --data-binary for a file, --data for raw/json/text.
+export function generateCurl(input: CodeGenInput): string {
+  const q = (s: string) => `'${String(s).replace(/'/g, `'\\''`)}'`
+  const parts = [`curl --location -X ${input.method || 'GET'} ${q(input.url)}`]
+  for (const h of allHeaders(input)) {
+    parts.push(`-H ${q(`${h.key}: ${h.value}`)}`)
+  }
+
+  if (bodyIsPresent(input)) {
+    const fields = (input.formFields ?? []).filter(f => f.enabled !== false && f.key.trim())
+    if (input.bodyType === 'formdata') {
+      for (const f of fields) {
+        const val = f.type === 'file' ? `@${f.value}` : f.value
+        parts.push(`-F ${q(`${f.key}=${val}`)}`)
+      }
+    } else if (input.bodyType === 'urlencoded') {
+      for (const f of fields) {
+        parts.push(`--data-urlencode ${q(`${f.key}=${f.value}`)}`)
+      }
+    } else if (input.bodyType === 'binary') {
+      parts.push(`--data-binary ${q(`@${input.body}`)}`)
+    } else {
+      parts.push(`--data ${q(input.body)}`)
+    }
+  }
+  return parts.join(' \\\n  ')
 }
 
 export function generatePython(input: CodeGenInput): string {
