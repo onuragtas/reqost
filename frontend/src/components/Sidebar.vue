@@ -16,7 +16,8 @@ import { useDialog } from '../composables/useDialog'
 import { useEnv } from '../composables/useEnv'
 import { useFavorites } from '../composables/useFavorites'
 import { parseCurl } from '../composables/curl'
-import { generateCurl } from '../composables/useCodeGen'
+import { generateCurl, interpolateInput } from '../composables/useCodeGen'
+import { TryPreScript } from '../../bindings/reqost/execservice'
 
 const { flatList, loadRoot, toggleNode, searchNodes, refreshNode, removeNode, reloadChildren } = useTree()
 const { isFav, toggle: toggleFav } = useFavorites()
@@ -124,7 +125,7 @@ async function onDrop(target: FlatNode) {
 const { openRequest, openAdhoc, closeTab } = useTabs()
 const { run: runColl } = useRunner()
 const dialog = useDialog()
-const { syncEnvironments } = useEnv()
+const { syncEnvironments, activeVars } = useEnv()
 
 // ── Context / header menu ──────────────────────────────────────────────────
 interface MenuItem {
@@ -266,7 +267,14 @@ async function copyCurl(node: FlatNode) {
   const d: any = await GetRequestDetail(node.id)
   if (!d) return
   const jparse = (s: string, fallback: any) => { try { return JSON.parse(s) } catch { return fallback } }
-  const curl = generateCurl({
+  let vars = { ...activeVars.value }
+  if (d.preScript?.trim()) {
+    try {
+      const res: any = await TryPreScript(d.preScript, vars)
+      vars = { ...vars, ...(res?.vars ?? {}) }
+    } catch { /* fall back to unresolved vars */ }
+  }
+  const curl = generateCurl(interpolateInput({
     method: d.method,
     url: d.url,
     headers: jparse(d.headers, []),
@@ -274,7 +282,7 @@ async function copyCurl(node: FlatNode) {
     bodyType: d.bodyType || (d.body ? 'raw' : 'none'),
     auth: jparse(d.auth, { type: 'none' }),
     formFields: jparse(d.formFields, []),
-  })
+  }, vars))
   try {
     await navigator.clipboard.writeText(curl)
     statusMsg.value = 'cURL copied'

@@ -18,7 +18,7 @@ import { parseCurl } from '../composables/curl'
 import { recordReqHistory, loadReqHistory, type ReqHistoryEntry } from '../composables/useRequestHistory'
 import {
   generateCurl, generatePython, generateJS, generateGo, generateJava, generateCSharp, generatePowerShell, generateHTTP,
-  CODE_LANGS, type CodeLang,
+  interpolateInput, CODE_LANGS, type CodeLang,
 } from '../composables/useCodeGen'
 import WsConsole from './WsConsole.vue'
 import GrpcConsole from './GrpcConsole.vue'
@@ -195,10 +195,30 @@ function fmtTs(ts: number) {
 // ── Code generation ────────────────────────────────────────────────────────
 const showCode = ref(false)
 const codeLang = ref<CodeLang>('python')
+// Vars a pre-request script would set (e.g. pm.environment.set) — resolved
+// once when the code panel opens (see toggleCode) so generated snippets show
+// the actual computed value instead of the literal {{var}} placeholder.
+const scriptVars = ref<Record<string, string>>({})
+async function toggleCode() {
+  if (showCode.value) { showCode.value = false; return }
+  const t = active.value
+  scriptVars.value = {}
+  if (t?.preScript?.trim()) {
+    try {
+      const res: any = await TryPreScript(t.preScript, { ...activeVars.value, ...t.tabVars })
+      scriptVars.value = res?.vars ?? {}
+    } catch { /* fall back to unresolved vars */ }
+  }
+  showCode.value = true
+}
 const generatedCode = computed(() => {
   const t = active.value
   if (!t) return ''
-  const input = { method: t.method, url: t.url, headers: t.headers, body: t.body, bodyType: t.bodyType, auth: t.auth, formFields: t.formFields }
+  const vars = { ...activeVars.value, ...t.tabVars, ...scriptVars.value }
+  const input = interpolateInput(
+    { method: t.method, url: t.url, headers: t.headers, body: t.body, bodyType: t.bodyType, auth: t.auth, formFields: t.formFields },
+    vars,
+  )
   switch (codeLang.value) {
     case 'curl':       return generateCurl(input)
     case 'python':     return generatePython(input)
@@ -1125,7 +1145,7 @@ function onSetVerifySSL(s: string) {
         </div>
         <button v-else class="cancel" @click="cancel">Cancel</button>
         <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
-        <button class="code-btn" :class="{ active: showCode }" title="Generate code" @click="showCode = !showCode">&lt;/&gt;</button>
+        <button class="code-btn" :class="{ active: showCode }" title="Generate code" @click="toggleCode">&lt;/&gt;</button>
       </div>
 
       <!-- Code generation panel -->

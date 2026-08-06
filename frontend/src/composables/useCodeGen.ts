@@ -1,4 +1,5 @@
 import type { HeaderRow, Auth, BodyType, FormRow } from './useTabs'
+import { interpolate } from './interpolate'
 
 export type CodeLang =
   | 'curl' | 'python' | 'javascript' | 'go'
@@ -52,6 +53,38 @@ export function contentTypeFor(bodyType: BodyType): string {
     case 'text':       return 'text/plain'
     case 'binary':     return 'application/octet-stream'
     default:           return '' // raw / none / formdata → caller decides
+  }
+}
+
+// interpolateInput resolves {{variables}} across every field a generated
+// snippet reads (url, header keys/values, body, auth, form fields) so the
+// emitted code carries actual values — including ones a pre-request script
+// set at Try/Send time — instead of the literal placeholder.
+export function interpolateInput(input: CodeGenInput, vars: Record<string, string>): CodeGenInput {
+  if (!vars || Object.keys(vars).length === 0) return input
+  return {
+    ...input,
+    url: interpolate(input.url, vars),
+    headers: input.headers.map(h => ({ ...h, key: interpolate(h.key, vars), value: interpolate(h.value, vars) })),
+    body: interpolate(input.body, vars),
+    auth: interpolateAuth(input.auth, vars),
+    formFields: (input.formFields ?? []).map(f => ({
+      ...f,
+      key: interpolate(f.key, vars),
+      value: f.type === 'file' ? f.value : interpolate(f.value, vars),
+    })),
+  }
+}
+
+function interpolateAuth(auth: Auth, vars: Record<string, string>): Auth {
+  if (!auth || auth.type === 'none') return auth
+  return {
+    ...auth,
+    token: interpolate(auth.token, vars),
+    username: interpolate(auth.username, vars),
+    password: interpolate(auth.password, vars),
+    key: interpolate(auth.key, vars),
+    value: interpolate(auth.value, vars),
   }
 }
 
