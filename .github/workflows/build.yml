@@ -163,16 +163,25 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       # GTK/WebKit dev packages are >150MB and dominate Linux build time.
-      # awalsh128/cache-apt-pkgs-action caches the resolved .deb archives in
-      # GitHub's actions cache keyed by the package list — on cache hit the
-      # apt-get update + download phase is skipped (only the local install
-      # remains, which is fast).
-      - name: Install Linux build deps (cached)
+      # We cache apt's downloaded .deb archives ourselves and always run a
+      # real `apt-get install` over them, so dpkg's pre/postinst scripts and
+      # ldconfig always run — third-party package-caching actions (e.g.
+      # awalsh128/cache-apt-pkgs-action) can restore files from cache without
+      # re-running those scripts, which left pkg-config unable to find
+      # gtk4/webkitgtk-6.0 even though the packages appeared "installed".
+      - name: Cache apt archives
         if: matrix.platform == 'linux'
-        uses: awalsh128/cache-apt-pkgs-action@v1
+        uses: actions/cache@v4
         with:
-          packages: libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
-          version: 1.0  # bump if the package list changes meaningfully
+          path: /var/cache/apt/archives/*.deb
+          key: apt-libgtk-4-dev-libwebkitgtk-6.0-dev-pkg-config-${{ matrix.runner }}
+
+      - name: Install Linux build deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libgtk-4-dev libwebkitgtk-6.0-dev pkg-config
 
       - name: Install wails3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
