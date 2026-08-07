@@ -13,6 +13,30 @@ var console = {
   error: function(){ __host.log(Array.prototype.slice.call(arguments).map(String).join(' ')); }
 };
 
+// CryptoJS: a pragmatic subset of the digest algorithms Postman's real
+// CryptoJS bundle exposes (MD5/SHA1/SHA256/SHA512 + their HMAC variants).
+// Digests are computed in Go (crypto/*) and returned as hex; the WordArray
+// stand-in's toString() defaults to hex like the real library, or Base64
+// when called with CryptoJS.enc.Base64.
+function __wordArray(hex){
+  return {
+    toString: function(enc){
+      if (enc && enc.name === 'Base64') return __host.hexToBase64(hex);
+      return hex;
+    }
+  };
+}
+var CryptoJS = {
+  MD5:        function(msg){ return __wordArray(__host.md5Hex(String(msg))); },
+  SHA1:       function(msg){ return __wordArray(__host.sha1Hex(String(msg))); },
+  SHA256:     function(msg){ return __wordArray(__host.sha256Hex(String(msg))); },
+  SHA512:     function(msg){ return __wordArray(__host.sha512Hex(String(msg))); },
+  HmacMD5:    function(msg, key){ return __wordArray(__host.hmacMD5Hex(String(msg), String(key))); },
+  HmacSHA1:   function(msg, key){ return __wordArray(__host.hmacSHA1Hex(String(msg), String(key))); },
+  HmacSHA256: function(msg, key){ return __wordArray(__host.hmacSHA256Hex(String(msg), String(key))); },
+  enc: { Hex: { name: 'Hex' }, Base64: { name: 'Base64' } }
+};
+
 function btoa(s){ return __host.btoa(String(s)); }
 function atob(s){ return __host.atob(String(s)); }
 

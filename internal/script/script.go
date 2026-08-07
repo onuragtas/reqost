@@ -3,7 +3,13 @@
 package script
 
 import (
+	"crypto/hmac"
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
+	"encoding/hex"
 	"time"
 
 	"github.com/dop251/goja"
@@ -104,6 +110,32 @@ func run(src string, vars map[string]string, req *ScriptRequest, resp *ScriptRes
 	_ = host.Set("log", func(s string) { res.Logs = append(res.Logs, s) })
 	_ = host.Set("addTest", func(name string, passed bool, errMsg string) {
 		res.Tests = append(res.Tests, TestResult{Name: name, Passed: passed, Error: errMsg})
+	})
+	_ = host.Set("md5Hex", func(s string) string { h := md5.Sum([]byte(s)); return hex.EncodeToString(h[:]) })
+	_ = host.Set("sha1Hex", func(s string) string { h := sha1.Sum([]byte(s)); return hex.EncodeToString(h[:]) })
+	_ = host.Set("sha256Hex", func(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) })
+	_ = host.Set("sha512Hex", func(s string) string { h := sha512.Sum512([]byte(s)); return hex.EncodeToString(h[:]) })
+	_ = host.Set("hmacMD5Hex", func(msg, key string) string {
+		m := hmac.New(md5.New, []byte(key))
+		m.Write([]byte(msg))
+		return hex.EncodeToString(m.Sum(nil))
+	})
+	_ = host.Set("hmacSHA1Hex", func(msg, key string) string {
+		m := hmac.New(sha1.New, []byte(key))
+		m.Write([]byte(msg))
+		return hex.EncodeToString(m.Sum(nil))
+	})
+	_ = host.Set("hmacSHA256Hex", func(msg, key string) string {
+		m := hmac.New(sha256.New, []byte(key))
+		m.Write([]byte(msg))
+		return hex.EncodeToString(m.Sum(nil))
+	})
+	_ = host.Set("hexToBase64", func(hexStr string) string {
+		b, err := hex.DecodeString(hexStr)
+		if err != nil {
+			return ""
+		}
+		return base64.StdEncoding.EncodeToString(b)
 	})
 	_ = host.Set("btoa", func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) })
 	_ = host.Set("atob", func(s string) string {

@@ -147,3 +147,29 @@ func TestLegacyPostmanGlobals(t *testing.T) {
 		t.Errorf("clearGlobalVariable did not unset: %v", res.Vars)
 	}
 }
+
+func TestCryptoJS(t *testing.T) {
+	src := `
+		postman.setGlobalVariable("md5", CryptoJS.MD5("abc").toString());
+		postman.setGlobalVariable("sha1", CryptoJS.SHA1("abc").toString());
+		postman.setGlobalVariable("sha256", CryptoJS.SHA256("abc").toString());
+		postman.setGlobalVariable("hmac", CryptoJS.HmacSHA256("abc", "key").toString());
+		postman.setGlobalVariable("hmacB64", CryptoJS.HmacSHA256("abc", "key").toString(CryptoJS.enc.Base64));
+	`
+	res := RunPre(src, map[string]string{}, ScriptRequest{}, nil, Info{})
+	if res.Error != "" {
+		t.Fatalf("error: %s", res.Error)
+	}
+	if res.Vars["md5"] != "900150983cd24fb0d6963f7d28e17f72" {
+		t.Errorf("MD5 = %s", res.Vars["md5"])
+	}
+	if res.Vars["sha1"] != "a9993e364706816aba3e25717850c26c9cd0d89d" {
+		t.Errorf("SHA1 = %s", res.Vars["sha1"])
+	}
+	if res.Vars["sha256"] != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {
+		t.Errorf("SHA256 = %s", res.Vars["sha256"])
+	}
+	if res.Vars["hmac"] == "" || res.Vars["hmacB64"] == "" {
+		t.Errorf("HMAC not computed: %+v", res.Vars)
+	}
+}

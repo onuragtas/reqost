@@ -459,11 +459,22 @@ async function send() {
     }, t.preScript, t.postScript)
 
     const resp = res?.response
-    t.response = resp
     t.tests = res?.tests ?? []
     t.logs = res?.logs ?? []
-    if (res?.scriptError) t.logs = [...t.logs, `⚠ ${res.scriptError}`]
     if (res?.vars) applyVars(res.vars)
+
+    // A pre-request script error means the backend deliberately skipped
+    // sending — surface it as a hard error (not a buried console log) so it
+    // never looks like a request that actually succeeded.
+    if (!resp && res?.scriptError) {
+      t.response = null
+      t.sendError = res.scriptError
+      t.resSubTab = t.tests.length ? 'testResults' : 'body'
+      return
+    }
+
+    t.response = resp
+    if (res?.scriptError) t.logs = [...t.logs, `⚠ ${res.scriptError}`]
     t.resSubTab = t.tests.length ? 'testResults' : 'body'
     if (resp && t.id) {
       recordReqHistory(t.id, resp.status, resp.timing?.totalMs ?? 0, resp.body ?? '', resp.headers ?? [])

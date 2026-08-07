@@ -84,14 +84,20 @@ func (s *ExecService) SendRequest(reqId, reqName string, req httpclient.Request,
 	sender := s.makeSender(ctx)
 	info := script.Info{RequestID: reqId, RequestName: reqName}
 
-	// Pre-request script: may mutate variables and the request.
+	// Pre-request script: may mutate variables and the request. A script that
+	// throws leaves variables it hadn't set yet unresolved (e.g. a signing
+	// helper failing before it calls pm.environment.set) — sending anyway
+	// would fire a request with literal "{{var}}" placeholders and look like
+	// a normal response, masking the real problem. So a pre-script error
+	// aborts the send instead of proceeding.
 	if preScript != "" {
 		pre := script.RunPre(preScript, vars, toScriptRequest(req), sender, info)
 		vars = pre.Vars
 		out.Vars = vars
 		out.Logs = append(out.Logs, pre.Logs...)
 		if pre.Error != "" {
-			out.ScriptError = pre.Error
+			out.ScriptError = "pre-request script error: " + pre.Error
+			return out, nil
 		}
 		if pre.Request != nil {
 			applyScriptRequest(&req, pre.Request)
