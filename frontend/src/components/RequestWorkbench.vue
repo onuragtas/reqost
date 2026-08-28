@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { SendRequest, Cancel, GetCookies, ClearCookies, SetCookie, DeleteCookie } from '../../bindings/reqost/execservice'
-import { SaveRequest } from '../../bindings/reqost/collectionservice'
+import { SaveRequest, CreateRequest } from '../../bindings/reqost/collectionservice'
 import { useTabs, toDetail, markClean, isDirty, type ReqSubTab, type ResSubTab, type AuthType, type BodyType } from '../composables/useTabs'
+import { useSaveAsDialog } from '../composables/useSaveAsDialog'
 import { useEnv } from '../composables/useEnv'
 import { useHistory } from '../composables/useHistory'
 import { useTree } from '../composables/useTree'
@@ -28,13 +29,14 @@ import EditorPane from './EditorPane.vue'
 import JsonTree from './JsonTree.vue'
 import { useVarHint } from '../composables/useVarHint'
 
-const { active, closeTab } = useTabs()
+const { active, closeTab, promoteAdhocTab } = useTabs()
 const dialog = useDialog()
+const { pickFolder } = useSaveAsDialog()
 const { activeVars, active: activeEnv, applyVars } = useEnv()
 const { varHint, showVarHint, hideVarHint } = useVarHint()
 const varFmt = (n: string) => '{{' + n + '}}'
 const { record } = useHistory()
-const { refreshNode } = useTree()
+const { refreshNode, reloadChildren } = useTree()
 const { settings: appSettings } = useSettings()
 
 // Switch protocol UI by URL scheme: ws/wss → WebSocket, grpc → gRPC, else HTTP.
@@ -79,9 +81,22 @@ async function save() {
   if (!t) return
   saving.value = true
   try {
-    await SaveRequest(toDetail(t) as any)
+    if (!t.fromCollection) {
+      // Opened via "+"/Cmd+T or an adhoc URL — this id isn't a real
+      // collection node yet, so SaveRequest would UPDATE zero rows and
+      // silently do nothing. Ask where it should live, create it there,
+      // then save into the id that actually exists.
+      const parentId = await pickFolder(`Save "${t.name}" to…`)
+      if (parentId === null) return // cancelled — nothing saved, nothing lost
+      const node: any = await CreateRequest(parentId, t.name, t.method)
+      promoteAdhocTab(t.id, node.id)
+      await SaveRequest(toDetail(t) as any)
+      await reloadChildren(parentId)
+    } else {
+      await SaveRequest(toDetail(t) as any)
+      refreshNode(t.id, { name: t.name, method: t.method })
+    }
     markClean(t)
-    refreshNode(t.id, { name: t.name, method: t.method })
     savedFlash.value = true
     setTimeout(() => (savedFlash.value = false), 1200)
   } finally {

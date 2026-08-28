@@ -117,6 +117,12 @@ export interface ReqTab {
   // G7: pin keeps the tab when "Close Others / All" runs, and renders the
   // pinned group at the front of the bar.
   pinned: boolean
+  // False for a tab opened via "+"/Cmd+T or an adhoc URL (History, dropped
+  // link): its id isn't backed by a `tree` row, so SaveRequest would UPDATE
+  // zero rows and silently do nothing. Save must run the "Save As" folder
+  // picker first (see RequestWorkbench.save) and call promoteAdhocTab once
+  // a real node exists. True for anything opened from the collection tree.
+  fromCollection: boolean
   clean: string // snapshot() at last load/save; '' means not yet baselined
   reqSubTab: ReqSubTab
   resSubTab: ResSubTab
@@ -151,7 +157,7 @@ const state = reactive({
 const SESSION_KEY = 'reqost:tabs:v1'
 
 function serializeTab(t: ReqTab) {
-  return { detail: toDetail(t), pinned: t.pinned, clean: t.clean }
+  return { detail: toDetail(t), pinned: t.pinned, clean: t.clean, fromCollection: t.fromCollection }
 }
 
 // hydrateTab rebuilds a tab from a serialized snapshot using the same parsers as
@@ -177,6 +183,11 @@ function hydrateTab(s: any): ReqTab | null {
   tab.settings = parseSettings(d.settings)
   tab.examples = parseExamples(d.examples)
   tab.pinned = !!s.pinned
+  // Sessions written before this field existed have no `fromCollection` —
+  // default those to true (the old, pre-"Save As" behavior: always save
+  // straight to this id) so restoring an old session doesn't suddenly demand
+  // a folder pick for tabs that were already backed by a real tree node.
+  tab.fromCollection = typeof s.fromCollection === 'boolean' ? s.fromCollection : true
   tab.loading = false
   // Keep the saved baseline so a tab that was dirty at close stays dirty.
   tab.clean = typeof s.clean === 'string' ? s.clean : snapshot(tab)
@@ -228,7 +239,7 @@ function blankTab(id: string, name: string, method: string): ReqTab {
   return {
     id, name, method: method || 'GET',
     url: '', params: [], headers: [], body: '', bodyType: 'none', formFields: [], graphqlVars: '', grpcMethod: '', auth: blankAuth(),
-    preScript: '', postScript: '', description: '', settings: {}, examples: [], tabVars: {}, pinned: false, clean: '',
+    preScript: '', postScript: '', description: '', settings: {}, examples: [], tabVars: {}, pinned: false, fromCollection: false, clean: '',
     reqSubTab: 'headers', resSubTab: 'body',
     loading: true, sending: false, sendError: '', response: null,
     tests: [], logs: [],
@@ -372,9 +383,22 @@ export function useTabs() {
       return
     }
     const tab = blankTab(node.id, node.name, node.method)
+    tab.fromCollection = true
     state.tabs.push(tab)
     state.activeId = tab.id
     void load(tab.id)
+  }
+
+  // promoteAdhocTab is called after "Save As" creates a real tree node for a
+  // tab that didn't have one — swaps the tab's synthetic id for the new
+  // node's id (keeping activeId and everything keyed off tab.id in sync) and
+  // marks it tree-backed so subsequent saves go straight to SaveRequest.
+  function promoteAdhocTab(oldId: string, newId: string) {
+    const tab = state.tabs.find(t => t.id === oldId)
+    if (!tab) return
+    tab.id = newId
+    tab.fromCollection = true
+    if (state.activeId === oldId) state.activeId = newId
   }
 
   // openAdhoc opens a request that isn't backed by a collection node (e.g. from
@@ -440,5 +464,5 @@ export function useTabs() {
     state.tabs.sort((a, b) => (a.pinned === b.pinned ? 0 : a.pinned ? -1 : 1))
   }
 
-  return { tabs, activeId, active, openRequest, openAdhoc, newRequest, selectTab, closeTab, moveTab, pinTab }
+  return { tabs, activeId, active, openRequest, openAdhoc, newRequest, promoteAdhocTab, selectTab, closeTab, moveTab, pinTab }
 }

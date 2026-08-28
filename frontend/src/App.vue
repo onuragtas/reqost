@@ -8,6 +8,7 @@ import RequestWorkbench from './components/RequestWorkbench.vue'
 import EnvironmentsModal from './components/EnvironmentsModal.vue'
 import RunnerModal from './components/RunnerModal.vue'
 import DialogModal from './components/DialogModal.vue'
+import SaveAsModal from './components/SaveAsModal.vue'
 import HistoryPanel from './components/HistoryPanel.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import { useCommands } from './composables/useCommands'
@@ -76,6 +77,7 @@ onMounted(() => {
     <EnvironmentsModal />
     <RunnerModal />
     <DialogModal />
+    <SaveAsModal />
     <CommandPalette />
   </div>
 </template>
