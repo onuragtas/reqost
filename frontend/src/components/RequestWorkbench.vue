@@ -2,7 +2,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { SendRequest, Cancel, GetCookies, ClearCookies, SetCookie, DeleteCookie } from '../../bindings/reqost/execservice'
 import { SaveRequest, CreateRequest } from '../../bindings/reqost/collectionservice'
-import { useTabs, toDetail, markClean, isDirty, type ReqSubTab, type ResSubTab, type AuthType, type BodyType } from '../composables/useTabs'
+import { useTabs, toDetail, markClean, isDirty, type ReqTab, type ReqSubTab, type ResSubTab, type AuthType, type BodyType } from '../composables/useTabs'
 import { useSaveAsDialog } from '../composables/useSaveAsDialog'
 import { useEnv } from '../composables/useEnv'
 import { useHistory } from '../composables/useHistory'
@@ -76,26 +76,51 @@ const BODY_CONTENT_TYPE: Record<string, string> = {
 const saving = ref(false)
 const savedFlash = ref(false)
 
+// saveToFolder runs the "Save As" folder picker and, unless cancelled,
+// creates a brand-new collection node there and repoints the tab at it
+// (VSCode-style: after Save As, the open tab IS the new copy — the id it
+// used to point at, if any, is left untouched on disk). Returns false if
+// the user cancelled, in which case the caller must not flash "Saved".
+async function saveToFolder(t: ReqTab): Promise<boolean> {
+  const parentId = await pickFolder(`Save "${t.name}" to…`)
+  if (parentId === null) return false
+  const node: any = await CreateRequest(parentId, t.name, t.method)
+  promoteAdhocTab(t.id, node.id)
+  await SaveRequest(toDetail(t) as any)
+  await reloadChildren(parentId)
+  return true
+}
+
 async function save() {
   const t = active.value
   if (!t) return
   saving.value = true
   try {
+    // A tab opened via "+"/Cmd+T or an adhoc URL isn't a real collection
+    // node yet — SaveRequest would UPDATE zero rows and silently do
+    // nothing, so route it through Save As instead of a plain save.
     if (!t.fromCollection) {
-      // Opened via "+"/Cmd+T or an adhoc URL — this id isn't a real
-      // collection node yet, so SaveRequest would UPDATE zero rows and
-      // silently do nothing. Ask where it should live, create it there,
-      // then save into the id that actually exists.
-      const parentId = await pickFolder(`Save "${t.name}" to…`)
-      if (parentId === null) return // cancelled — nothing saved, nothing lost
-      const node: any = await CreateRequest(parentId, t.name, t.method)
-      promoteAdhocTab(t.id, node.id)
-      await SaveRequest(toDetail(t) as any)
-      await reloadChildren(parentId)
+      if (!(await saveToFolder(t))) return
     } else {
       await SaveRequest(toDetail(t) as any)
       refreshNode(t.id, { name: t.name, method: t.method })
     }
+    markClean(t)
+    savedFlash.value = true
+    setTimeout(() => (savedFlash.value = false), 1200)
+  } finally {
+    saving.value = false
+  }
+}
+
+// saveAs always opens the folder picker, even for a tab that's already
+// saved — creates a fresh copy alongside the original, which stays intact.
+async function saveAs() {
+  const t = active.value
+  if (!t) return
+  saving.value = true
+  try {
+    if (!(await saveToFolder(t))) return
     markClean(t)
     savedFlash.value = true
     setTimeout(() => (savedFlash.value = false), 1200)
@@ -137,6 +162,7 @@ function onKeyDown(e: KeyboardEvent) {
   if (!e.metaKey && !e.ctrlKey) return
   if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); sendAndSave(); return }
   if (e.key === 'Enter') { e.preventDefault(); send() }
+  else if ((e.key === 's' || e.key === 'S') && e.shiftKey) { e.preventDefault(); saveAs() }
   else if (e.key === 's') { e.preventDefault(); save() }
   else if (e.key === 'w') { e.preventDefault(); maybeCloseActive() }
   else if ((e.key === 'f' || e.key === 'F') && e.shiftKey) { e.preventDefault(); beautifyBody() }
@@ -908,6 +934,7 @@ const filteredResHeaders = computed(() => {
 
 // ── Send menu actions (G9) ─────────────────────────────────────────────
 const showSendMenu = ref(false)
+const showSaveMenu = ref(false)
 let runStats = { ok: 0, fail: 0, totalMs: 0 }
 async function sendNTimes(n: number) {
   const t = active.value
@@ -1170,7 +1197,16 @@ function onSetVerifySSL(s: string) {
           </div>
         </div>
         <button v-else class="cancel" @click="cancel">Cancel</button>
-        <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
+        <div class="save-group">
+          <button class="save" :disabled="saving" @click="save">{{ savedFlash ? 'Saved ✓' : 'Save' }}</button>
+          <div class="send-menu-wrap">
+            <button class="save-more" :disabled="saving" title="More save options" @click.stop="showSaveMenu = !showSaveMenu">▾</button>
+            <div v-if="showSaveMenu" class="send-menu" @click.stop>
+              <button class="sm-item" @click="saveAs(); showSaveMenu = false">Save As…  <span class="kb">⌘⇧S</span></button>
+            </div>
+            <div v-if="showSaveMenu" class="menu-backdrop" @click="showSaveMenu = false" />
+          </div>
+        </div>
         <button class="code-btn" :class="{ active: showCode }" title="Generate code" @click="toggleCode">&lt;/&gt;</button>
       </div>
 
@@ -1872,8 +1908,12 @@ function onSetVerifySSL(s: string) {
 .sm-item .kb { font-size: 10px; color: var(--text-faint); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 109; }
 .cancel { background: var(--danger); color: #fff; border-radius: 5px; font-weight: 700; padding: 0 18px; }
-.save { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); padding: 0 14px; }
+.save-group { display: inline-flex; align-items: stretch; }
+.save { background: var(--bg-input); border: 1px solid var(--border-strong); border-right: none; border-radius: 5px 0 0 5px; color: var(--text-dim); padding: 0 14px; }
 .save:disabled { opacity: 0.6; cursor: default; }
+.save-more { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 0 5px 5px 0; color: var(--text-dim); padding: 0 8px; font-weight: 700; }
+.save-more:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.save-more:disabled { opacity: 0.6; cursor: default; }
 .code-btn { background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text-dim); padding: 0 10px; font-size: 13px; font-weight: 600; }
 .code-btn:hover, .code-btn.active { color: var(--accent); border-color: var(--accent); }
 
