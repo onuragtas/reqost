@@ -158,6 +158,7 @@ function openNodeMenu(e: MouseEvent, node: FlatNode) {
     items.push({ label: `Copy reference: {{${node.name}.response.body.…}}`, run: () => copyText(`{{${node.name}.response.body.}}`) })
   }
   items.push(
+    { label: 'Export…', run: () => exportNode(node.name, node.id) },
     { label: 'Copy ID', run: () => copyText(node.id) },
     { label: 'Duplicate', run: () => duplicate(node) },
     { label: 'Rename', run: () => rename(node) },
@@ -313,10 +314,21 @@ async function onImportWorkspaceZip() {
 }
 
 async function onExport() {
-  const path = await PickExport('reqost export') // native save-file dialog
-  if (!path) return
-  statusMsg.value = 'Exported ✓'
-  setTimeout(() => { if (statusMsg.value === 'Exported ✓') statusMsg.value = '' }, 1500)
+  await exportNode('reqost export', '')
+}
+
+// exportNode drives the native save dialog for either the whole collection
+// (rootID '') or a single node's subtree (folder -> its children as the
+// collection's top-level items; request -> a one-item collection) — the
+// output is always spec-clean Postman v2.1, so it re-imports into Postman
+// itself the same way a full collection export does.
+async function exportNode(name: string, rootID: string) {
+  try {
+    const path = await PickExport(name, rootID) // native save-file dialog
+    if (!path) return
+    statusMsg.value = 'Exported ✓'
+    setTimeout(() => { if (statusMsg.value === 'Exported ✓') statusMsg.value = '' }, 1500)
+  } catch (e) { flashError('Export failed', e) }
 }
 const searchQuery = ref('')
 const statusMsg = ref('')

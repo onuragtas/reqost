@@ -230,7 +230,7 @@ func (s *CollectionService) ExportWorkspaceZip(path string) error {
 
 	// Materialise pieces first; only then touch the file so an error leaves
 	// the disk untouched.
-	collJSON, err := s.db.ExportJSON(s.workspaceName())
+	collJSON, err := s.db.ExportJSON(s.workspaceName(), "")
 	if err != nil {
 		return fmt.Errorf("export collection: %w", err)
 	}
@@ -361,13 +361,14 @@ func (s *CollectionService) ImportHARBytes(data string) (int, error) {
 }
 
 // PickExport opens a native save-file dialog and writes the Postman export to
-// the chosen path. Returns the path ("" if cancelled).
-func (s *CollectionService) PickExport(name string) (string, error) {
+// the chosen path. rootID scopes the export to one node's subtree ("" = the
+// whole collection — see ExportJSON). Returns the path ("" if cancelled).
+func (s *CollectionService) PickExport(name, rootID string) (string, error) {
 	if s.dialog == nil {
 		return "", fmt.Errorf("dialog unavailable")
 	}
 	d := s.dialog.SaveFile()
-	d.SetFilename("reqost-collection.json")
+	d.SetFilename(exportFilename(name))
 	path, err := d.PromptForSingleSelection()
 	if err != nil {
 		return "", err
@@ -375,10 +376,37 @@ func (s *CollectionService) PickExport(name string) (string, error) {
 	if path == "" {
 		return "", nil
 	}
-	if err := s.ExportCollectionToFile(path, name); err != nil {
+	if err := s.ExportCollectionToFile(path, name, rootID); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// exportFilename turns a collection/folder/request name into a default save-
+// dialog filename, e.g. "Auth Requests" -> "auth-requests.json".
+func exportFilename(name string) string {
+	if name == "" {
+		return "reqost-collection.json"
+	}
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
+		case r == ' ' || r == '_':
+			return '-'
+		case r == '-':
+			return r
+		default:
+			return -1
+		}
+	}, name)
+	safe = strings.Trim(safe, "-")
+	if safe == "" {
+		return "reqost-collection.json"
+	}
+	return safe + ".json"
 }
 
 // GetRootItems returns the top-level nodes in the collection tree.
@@ -507,15 +535,17 @@ func (s *CollectionService) ListRequestsUnder(id string) ([]index.TreeNode, erro
 	return s.db.RequestsUnder(id)
 }
 
-// ExportCollection renders the whole index as a Postman v2.1 JSON document.
-func (s *CollectionService) ExportCollection(name string) (string, error) {
-	return s.db.ExportJSON(name)
+// ExportCollection renders the index as a Postman v2.1 JSON document. rootID
+// scopes it to one node's subtree ("" = the whole collection).
+func (s *CollectionService) ExportCollection(name, rootID string) (string, error) {
+	return s.db.ExportJSON(name, rootID)
 }
 
 // ExportCollectionToFile writes the Postman v2.1 export to path. Reliable from
-// the webview (the browser download path does not work in WKWebView).
-func (s *CollectionService) ExportCollectionToFile(path, name string) error {
-	data, err := s.db.ExportJSON(name)
+// the webview (the browser download path does not work in WKWebView). rootID
+// scopes it to one node's subtree ("" = the whole collection).
+func (s *CollectionService) ExportCollectionToFile(path, name, rootID string) error {
+	data, err := s.db.ExportJSON(name, rootID)
 	if err != nil {
 		return err
 	}

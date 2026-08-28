@@ -111,23 +111,27 @@ export function DuplicateNode(id) {
 }
 
 /**
- * ExportCollection renders the whole index as a Postman v2.1 JSON document.
+ * ExportCollection renders the index as a Postman v2.1 JSON document. rootID
+ * scopes it to one node's subtree ("" = the whole collection).
  * @param {string} name
+ * @param {string} rootID
  * @returns {$CancellablePromise<string>}
  */
-export function ExportCollection(name) {
-    return $Call.ByID(637473995, name);
+export function ExportCollection(name, rootID) {
+    return $Call.ByID(637473995, name, rootID);
 }
 
 /**
  * ExportCollectionToFile writes the Postman v2.1 export to path. Reliable from
- * the webview (the browser download path does not work in WKWebView).
+ * the webview (the browser download path does not work in WKWebView). rootID
+ * scopes it to one node's subtree ("" = the whole collection).
  * @param {string} path
  * @param {string} name
+ * @param {string} rootID
  * @returns {$CancellablePromise<void>}
  */
-export function ExportCollectionToFile(path, name) {
-    return $Call.ByID(3621961792, path, name);
+export function ExportCollectionToFile(path, name, rootID) {
+    return $Call.ByID(3621961792, path, name, rootID);
 }
 
 /**
@@ -289,12 +293,14 @@ export function MoveNode(id, newParentID, newIndex) {
 
 /**
  * PickExport opens a native save-file dialog and writes the Postman export to
- * the chosen path. Returns the path ("" if cancelled).
+ * the chosen path. rootID scopes the export to one node's subtree ("" = the
+ * whole collection — see ExportJSON). Returns the path ("" if cancelled).
  * @param {string} name
+ * @param {string} rootID
  * @returns {$CancellablePromise<string>}
  */
-export function PickExport(name) {
-    return $Call.ByID(2956308126, name);
+export function PickExport(name, rootID) {
+    return $Call.ByID(2956308126, name, rootID);
 }
 
 /**

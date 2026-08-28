@@ -88,7 +88,7 @@ func (s *GitService) Export(dir, name string) error {
 	if name == "" {
 		name = "reqost"
 	}
-	json, err := s.collSvc.db.ExportJSON(name)
+	json, err := s.collSvc.db.ExportJSON(name, "")
 	if err != nil {
 		return err
 	}
