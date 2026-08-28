@@ -1,7 +1,8 @@
 // Package envstore persists environments (named bags of variables) to a JSON
-// file in the user cache dir. It is intentionally dumb storage: the frontend
-// owns all editing logic; the backend just loads and saves the whole state and
-// resolves the active variable map for interpolation.
+// file in reqost's persistent data directory (see internal/appdir). It is
+// intentionally dumb storage: the frontend owns all editing logic; the
+// backend just loads and saves the whole state and resolves the active
+// variable map for interpolation.
 package envstore
 
 import (
@@ -10,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"reqost/internal/appdir"
 )
 
 type Var struct {
@@ -40,13 +43,9 @@ type Store struct {
 }
 
 func Open() (*Store, error) {
-	cacheDir, err := os.UserCacheDir()
+	dir, err := appdir.Dir()
 	if err != nil {
-		return nil, fmt.Errorf("user cache dir: %w", err)
-	}
-	dir := filepath.Join(cacheDir, "reqost")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("create cache dir: %w", err)
+		return nil, fmt.Errorf("app dir: %w", err)
 	}
 	return &Store{path: filepath.Join(dir, "environments.json")}, nil
 }

@@ -65,17 +65,16 @@ type DB struct {
 	conn *sql.DB
 }
 
-func Open() (*DB, error) {
-	path, err := dbPath()
-	if err != nil {
-		return nil, err
-	}
-	return OpenAt(path)
-}
-
-// OpenAt opens (or creates) an index at an explicit path. Used by Open and by
-// tests that need an isolated database.
+// OpenAt opens (or creates) an index at an explicit path, creating its
+// parent directory first if needed — callers (workspace creation, the
+// legacy single-DB path) must not be relied on to have done this
+// themselves; forgetting it is exactly what SQLITE_CANTOPEN (14) looks
+// like, and it's a lot less debuggable from the caller's side than from
+// here.
 func OpenAt(path string) (*DB, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create index dir: %w", err)
+	}
 	conn, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
@@ -170,19 +169,6 @@ func migrate(conn *sql.DB) {
 
 func (db *DB) Close() error {
 	return db.conn.Close()
-}
-
-func dbPath() (string, error) {
-	cacheDir, err := os.UserCacheDir()
-	if err != nil {
-		return "", fmt.Errorf("user cache dir: %w", err)
-	}
-	dir := filepath.Join(cacheDir, "reqost")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create cache dir: %w", err)
-	}
-	log.Default().Printf("using index at %s", dir)
-	return filepath.Join(dir, "index.db"), nil
 }
 
 func (db *DB) GetMtime(path string) (int64, error) {
@@ -281,7 +267,7 @@ func (db *DB) MergeItems(items []collection.FlatItem) error {
 
 // ImportItems merges a fresh parse into the index incrementally:
 //   - Nodes present only in the existing index are deleted (with their detail
-//     + FTS rows).
+//   - FTS rows).
 //   - Nodes shared by id between import and existing rows have their `tree`
 //     fields (name/parent/type/method/sort_order) updated, but their `detail`
 //     row is left untouched so in-app edits survive a re-import.

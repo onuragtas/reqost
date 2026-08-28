@@ -9,6 +9,7 @@ import (
 
 	"reqost/internal/collection"
 	"reqost/internal/index"
+	"reqost/internal/workspaces"
 )
 
 func main() {
@@ -23,7 +24,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := index.Open()
+	// Target the same DB the running app would open (its active workspace),
+	// not a standalone path, so this actually shows up in the app.
+	ws, err := workspaces.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open workspaces: %v\n", err)
+		os.Exit(1)
+	}
+	db, err := index.OpenAt(ws.DBPath(ws.ActiveID()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "open index: %v\n", err)
 		os.Exit(1)

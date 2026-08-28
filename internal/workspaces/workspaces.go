@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"reqost/internal/appdir"
 )
 
 type Workspace struct {
@@ -39,12 +41,8 @@ type Store struct {
 }
 
 func Open() (*Store, error) {
-	cacheDir, err := os.UserCacheDir()
+	dir, err := appdir.Dir()
 	if err != nil {
-		return nil, err
-	}
-	dir := filepath.Join(cacheDir, "reqost")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	s := &Store{dir: dir, path: filepath.Join(dir, "workspaces.json")}

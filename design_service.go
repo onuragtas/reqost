@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"reqost/internal/appdir"
 )
 
 func unmarshalYAML(data []byte, out any) error { return yaml.Unmarshal(data, out) }
@@ -40,8 +42,8 @@ type DesignService struct {
 
 func NewDesignService() *DesignService {
 	s := &DesignService{}
-	if cacheDir, err := os.UserCacheDir(); err == nil {
-		s.path = filepath.Join(cacheDir, "reqost", "design.yaml")
+	if dir, err := appdir.Dir(); err == nil {
+		s.path = filepath.Join(dir, "design.yaml")
 	}
 	if data, err := os.ReadFile(s.path); err == nil {
 		s.specRaw = string(data)

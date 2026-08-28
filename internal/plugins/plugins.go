@@ -21,10 +21,12 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+
+	"reqost/internal/appdir"
 )
 
-func jsonUnmarshal(data []byte, v any) error      { return json.Unmarshal(data, v) }
-func jsonMarshalIndent(v any) ([]byte, error)     { return json.MarshalIndent(v, "", "  ") }
+func jsonUnmarshal(data []byte, v any) error  { return json.Unmarshal(data, v) }
+func jsonMarshalIndent(v any) ([]byte, error) { return json.MarshalIndent(v, "", "  ") }
 
 type Plugin struct {
 	Name    string `json:"name"`
@@ -38,24 +40,24 @@ type Plugin struct {
 type Manager struct {
 	dir string
 
-	mu       sync.Mutex
-	enabled  map[string]bool // path → enabled
+	mu        sync.Mutex
+	enabled   map[string]bool // path → enabled
 	prefsPath string
 }
 
 func Open() (*Manager, error) {
-	cacheDir, err := os.UserCacheDir()
+	base, err := appdir.Dir()
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(cacheDir, "reqost", "plugins")
+	dir := filepath.Join(base, "plugins")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	m := &Manager{
 		dir:       dir,
 		enabled:   map[string]bool{},
-		prefsPath: filepath.Join(cacheDir, "reqost", "plugins.json"),
+		prefsPath: filepath.Join(base, "plugins.json"),
 	}
 	m.loadPrefs()
 	return m, nil
